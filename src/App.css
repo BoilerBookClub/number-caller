@@ -6,6 +6,19 @@
   text-align: center;
 }
 
+html.modal-scroll-locked,
+body.modal-scroll-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.modal-scroll-locked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
 #root:has(.display) {
   max-width: 100000rem;
 }
@@ -119,9 +132,13 @@
 }
 
 .claim-corner-button--active {
-  background: #f4f4f4;
+  background: #111111;
   border-color: #111111;
-  box-shadow: inset 0 0 0 1px #111111;
+  box-shadow: none;
+}
+
+.claim-corner-button--active .button-icon {
+  filter: brightness(0) invert(1);
 }
 
 .claim-ticket-logo-wrap {
@@ -158,7 +175,7 @@
     0 0 18px rgba(255, 99, 99, 0.2),
     0 0 28px rgba(118, 173, 255, 0.18),
     0 0 40px rgba(229, 128, 255, 0.16);
-  animation: rainbowBorderMove 8s linear infinite;
+  animation: rainbowBorderMove 16s linear infinite;
   background-size: 100% 100%, 1800% 1800%;
 }
 
@@ -239,6 +256,12 @@
   margin-top: 1.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid #e4e4e4;
+}
+
+.claim-qr-panel--active {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .claim-status-grid {
@@ -380,7 +403,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.9rem 1rem;
+  padding: .4rem 1rem;
   border: 1px solid #e4e4e4;
   border-radius: 16px;
   background: #fffdf8;
@@ -965,7 +988,7 @@ button:disabled {
   -webkit-background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: rainbowMove 15s linear infinite;
+  animation: rainbowMove 22s linear infinite;
 }
 
 .rainbow-text {
@@ -990,7 +1013,7 @@ button:disabled {
 
 .claim-modal-card--active .eyebrow--active.rainbow-text,
 .claim-modal-card--active .assigned-number.rainbow-text {
-  animation-duration: 8s;
+  animation-duration: 16s;
 }
 
 @keyframes rainbowMove {
@@ -1040,8 +1063,8 @@ button:disabled {
 }
 
 .carnival {
-  margin: 0 0 3rem;
-  font-size: 8rem;
+  margin: 0 0 1rem;
+  font-size: clamp(3.5rem, 7vw, 6rem);
   line-height: 90%;
 }
 
@@ -1059,7 +1082,7 @@ button:disabled {
 .display-claim-qr-row {
   display: flex;
   justify-content: center;
-  margin-top: 2.5rem;
+  margin-top: 0rem;
 }
 
 .display-logo-wrap {

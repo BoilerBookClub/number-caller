@@ -5,19 +5,9 @@ import notificationIcon from "../assets/notification.svg";
 import { getEventTitleClassName } from "../titleFonts";
 
 function ClaimRulesModal({
-  areClaimNotificationsEnabled,
   liveState,
-  notificationPermission,
   onAcknowledgeRules,
-  onToggleClaimNotifications,
 }) {
-  const notificationLabel =
-    areClaimNotificationsEnabled
-      ? "Notifications On"
-      : notificationPermission === "unsupported"
-        ? "Notifications Unavailable"
-        : "Turn On Notifications";
-
   return (
     <div className="claim-rules-backdrop" role="presentation">
       <div className="claim-rules-modal" role="dialog" aria-modal="true" aria-label="Claim rules">
@@ -25,25 +15,17 @@ function ClaimRulesModal({
           <p className="eyebrow">Before You Start</p>
           <h2>Welcome to {liveState.title}!</h2>
           <div className="claim-rules-copy">
-            <p>You will be assigned a number based on when you arrived.</p>
-            <p>Numbers will be called sequentially.</p>
-            <p>
-              Before your number is called, read the book descriptions, which are linked below your
-              number, so you know what you&apos;d like to grab.
-            </p>
-            <p>
-              When your number is called, come up and grab an item. Once you have your item, have
-              your QR code, which will appear when it&apos;s your turn, scanned by a staff member.
-            </p>
-            <p>
-              There will likely be multiple rounds of goodie selection, so once the current round
-              ends, you&apos;ll be up again for more. You&apos;ll want to stick around.
-            </p>
+            <ol>
+                <li>You will be assigned a number sequentially based on when you arrived.</li>
+                <li>When your number is called, you can come up and claim one item.</li>
+                <li>Before your number is called, read the book descriptions, which are linked below your
+              number, so you know what you&apos;d like to grab.</li>
+                <li>After you claim your item, a staff member will scan your QR code to confirm your claim.</li>
+                <li>There will likely be multiple rounds of goodie selection, so once the current round
+              ends, you&apos;ll be up again for more. You&apos;ll want to stick around.</li>
+            </ol>
           </div>
           <div className="claim-rules-actions">
-            <button className="secondary-button" type="button" onClick={onToggleClaimNotifications}>
-              {notificationLabel}
-            </button>
             <button type="button" onClick={onAcknowledgeRules}>
               Got it!
             </button>

@@ -567,17 +567,7 @@ function App() {
     }
 
     setAreClaimNotificationsEnabled(true);
-
-    try {
-      await sendBrowserNotification({
-        body: "You’ll get an alert here when your number is called.",
-        registration: notificationRegistrationRef.current,
-        tag: `claim-notifications-enabled:${attendeeClaimId || "pending"}`,
-        title: `${liveState.title}: Notifications On`,
-      });
-    } catch {
-      setNotificationPermission(getBrowserNotificationPermission());
-    }
+    window.alert("Notifications are on. You will get an alert when your number is called.");
   };
 
   const closeEventDetailsModal = () => {
@@ -717,12 +707,17 @@ function App() {
     }
 
     const { body, documentElement } = document;
+    const lockedScrollY = window.scrollY;
+
     documentElement.classList.add("modal-scroll-locked");
     body.classList.add("modal-scroll-locked");
+    body.style.top = `-${lockedScrollY}px`;
 
     return () => {
       documentElement.classList.remove("modal-scroll-locked");
       body.classList.remove("modal-scroll-locked");
+      body.style.top = "";
+      window.scrollTo(0, lockedScrollY);
     };
   }, [shouldLockBackgroundScroll]);
 
