@@ -30,14 +30,15 @@ function EventDetailsModal({
         ) : null}
         <div className="event-modal-content">
           <h2>{isEventLive ? "Edit Event Details" : "Create Event"}</h2>
-          <form className="control-form" onSubmit={onSubmit}>
+          <form className="control-form event-modal-form" onSubmit={onSubmit}>
             <label className="control-input-group control-input-group--centered">
               <span>Event Title</span>
               <input
                 type="text"
                 value={controlForm.title}
                 onChange={onFieldChange("title")}
-                placeholder="Enter event title"
+                placeholder="Event Name Here."
+                autoComplete="off"
               />
             </label>
             <label className="control-input-group control-input-group--centered">
@@ -77,7 +78,7 @@ function EventDetailsModal({
                 />
               </label>
             </div>
-            <label className="control-input-group control-input-group--centered">
+            <label className="control-input-group control-input-group--centered control-input-group--compact">
               <span>Member Early Check-In</span>
               <input
                 type="number"
@@ -114,15 +115,35 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
   }
 
   const claimedCount = claims.filter((claim) => claim.redeemedRound === currentRound).length;
+  const queueSummaryItems = [
+    {
+      label: "Up For",
+      value: isFinalCall ? "Final Call" : null,
+    },
+    {
+      label: "Claimed",
+      value: `${claimedCount}/${claims.length}`,
+    },
+  ];
 
   return (
     <>
-      <p className="queue-progress">
-        {claimedCount}/{claims.length} have claimed
-      </p>
-      {!isFinalCall && isLastGroup ? (
-        <p className="entry-message">This is the last group. Use Final Call when you&apos;re ready.</p>
-      ) : null}
+      <div className="queue-summary" aria-label="Current queue status">
+        {queueSummaryItems.map((item) =>
+          item.value ? (
+            <div key={item.label} className="queue-summary-card">
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ) : null,
+        )}
+        {!isFinalCall && isLastGroup ? (
+          <div className="queue-summary-card queue-summary-card--alert">
+            <span>Queue Status</span>
+            <strong>Last group ready for Final Call</strong>
+          </div>
+        ) : null}
+      </div>
       <div className="roster-list" role="list">
         {claims.map((claim) => {
           const hasClaimedCurrentGroup = claim.redeemedRound === currentRound;

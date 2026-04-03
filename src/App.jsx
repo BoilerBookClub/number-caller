@@ -57,7 +57,7 @@ const initialState = {
 };
 
 const initialControlForm = {
-  title: initialState.title,
+  title: "",
   titleFont: initialState.titleFont,
   qrUrl: initialState.qrUrl,
   memberCheckInLeadMinutes: String(initialState.memberCheckInLeadMinutes),
@@ -214,6 +214,7 @@ const buildEventId = () =>
 
 const CLAIM_ACCESS_GRANT_KEY = "number-caller-claim-access-grant";
 const CONFIRMED_CLAIM_ACCESS_KEY = "number-caller-confirmed-claim-access";
+const PERSISTED_CLAIM_SESSION_KEY = "number-caller-persisted-claim-session";
 
 const readClaimAccessGrant = () => {
   const rawGrant = window.sessionStorage.getItem(CLAIM_ACCESS_GRANT_KEY);
@@ -262,6 +263,45 @@ const writeConfirmedClaimAccess = (confirmedAccess) => {
 
 const clearConfirmedClaimAccess = () => {
   window.localStorage.removeItem(CONFIRMED_CLAIM_ACCESS_KEY);
+};
+
+const readPersistedClaimSession = () => {
+  const rawPersistedClaimSession = window.localStorage.getItem(
+    PERSISTED_CLAIM_SESSION_KEY,
+  );
+
+  if (!rawPersistedClaimSession) {
+    return null;
+  }
+
+  try {
+    const parsedPersistedClaimSession = JSON.parse(rawPersistedClaimSession);
+
+    if (
+      !parsedPersistedClaimSession ||
+      typeof parsedPersistedClaimSession.claimId !== "string" ||
+      typeof parsedPersistedClaimSession.eventId !== "string" ||
+      typeof parsedPersistedClaimSession.userId !== "string"
+    ) {
+      throw new Error("Invalid persisted claim session.");
+    }
+
+    return parsedPersistedClaimSession;
+  } catch {
+    window.localStorage.removeItem(PERSISTED_CLAIM_SESSION_KEY);
+    return null;
+  }
+};
+
+const writePersistedClaimSession = (claimSession) => {
+  window.localStorage.setItem(
+    PERSISTED_CLAIM_SESSION_KEY,
+    JSON.stringify(claimSession),
+  );
+};
+
+const clearPersistedClaimSession = () => {
+  window.localStorage.removeItem(PERSISTED_CLAIM_SESSION_KEY);
 };
 
 const buildClaimNotificationsEnabledKey = (eventId, claimId) =>
@@ -399,12 +439,15 @@ function App() {
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
   const eventStartTime = getTodayTime(liveEvent.timeframeStart);
+  const eventEndTime = getTodayTime(liveEvent.timeframeEnd);
   const memberCheckInLeadMinutes = normalizeMemberCheckInLeadMinutes(
     liveState.memberCheckInLeadMinutes,
   );
   const memberEarlyAccessTime = eventStartTime
     ? new Date(eventStartTime.getTime() - memberCheckInLeadMinutes * 60 * 1000)
     : null;
+  const hasEventTimeEnded = Boolean(eventEndTime) && currentTime >= eventEndTime.getTime();
+  const isAttendeeEventLive = isEventLive && !hasEventTimeEnded;
   const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
   const isClaimWindowOpen =
     !eventStartTime ||
@@ -431,10 +474,18 @@ function App() {
   const qrRotationProgress = qrRotationElapsedMs / CLAIM_ACCESS_ROTATION_MS;
   const nextQrCountdownSeconds = Math.ceil(qrRotationRemainingMs / 1000);
   const attendeeClaimKey = loggedIn && user ? `discord:${user}` : "";
+  const persistedClaimSession = readPersistedClaimSession();
+  const persistedClaimEventId = persistedClaimSession?.eventId ?? "";
+  const persistedAttendeeClaimId =
+    liveEvent.eventId &&
+    persistedClaimEventId === liveEvent.eventId &&
+    persistedClaimSession?.userId === user
+      ? persistedClaimSession.claimId
+      : "";
   const attendeeClaimId =
     liveEvent.eventId && attendeeClaimKey
       ? buildClaimId(liveEvent.eventId, attendeeClaimKey)
-      : claimResult?.claimId ?? "";
+      : persistedAttendeeClaimId || claimResult?.claimId || "";
   const claimRulesAcknowledgedKey =
     liveEvent.eventId && attendeeClaimId
       ? buildClaimRulesAcknowledgedKey(liveEvent.eventId, attendeeClaimId)
@@ -545,6 +596,7 @@ function App() {
   const handleLogout = useCallback(() => {
     clearClaimAccessGrant();
     clearConfirmedClaimAccess();
+    clearPersistedClaimSession();
     logout();
   }, [logout]);
 
@@ -555,6 +607,7 @@ function App() {
     setClaimError("");
     setClaimLoading(false);
     setIsClaimRulesOpen(false);
+    clearPersistedClaimSession();
   };
 
   const acknowledgeClaimRules = () => {
@@ -793,6 +846,7 @@ function App() {
 
   useEffect(() => {
     if (!isEventLive) {
+      setControlForm(initialControlForm);
       return;
     }
 
@@ -926,30 +980,34 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (isEventLive) {
+    if (isAttendeeEventLive) {
       previousLiveEventTitleRef.current = liveState.title?.trim() || initialState.title;
     }
 
     const wasEventLive = previousIsEventLiveRef.current;
 
-    if (isEventLive) {
+    if (isAttendeeEventLive) {
       setEndedEventTitle("");
     } else if (wasEventLive) {
-      const completedEventTitle = previousLiveEventTitleRef.current;
-
-      setEndedEventTitle(completedEventTitle);
-
-      if (loggedIn) {
-        handleLogout();
-      }
-
-      if (mode === "control") {
-        changeMode(null, { replace: true });
-      }
+      setEndedEventTitle(previousLiveEventTitleRef.current);
     }
 
-    previousIsEventLiveRef.current = isEventLive;
-  }, [changeMode, handleLogout, isEventLive, liveState.title, loggedIn, mode]);
+    previousIsEventLiveRef.current = isAttendeeEventLive;
+  }, [isAttendeeEventLive, liveState.title]);
+
+  useEffect(() => {
+    if (isEventLive) {
+      return;
+    }
+
+    if (loggedIn) {
+      handleLogout();
+    }
+
+    if (mode === "control") {
+      changeMode(null, { replace: true });
+    }
+  }, [changeMode, handleLogout, isEventLive, loggedIn, mode]);
 
   useEffect(() => {
     if (!attendeeClaimId) {
@@ -1065,6 +1123,34 @@ function App() {
   }, [attendeeClaimId]);
 
   useEffect(() => {
+    if (!loggedIn || !user) {
+      clearPersistedClaimSession();
+      return;
+    }
+
+    if (!claimRecord?.claimId || !claimRecord.eventId) {
+      return;
+    }
+
+    writePersistedClaimSession({
+      claimId: claimRecord.claimId,
+      eventId: claimRecord.eventId,
+      userId: user,
+    });
+  }, [claimRecord, loggedIn, user]);
+
+  useEffect(() => {
+    if (!liveEvent.eventId) {
+      clearPersistedClaimSession();
+      return;
+    }
+
+    if (persistedClaimEventId && persistedClaimEventId !== liveEvent.eventId) {
+      clearPersistedClaimSession();
+    }
+  }, [liveEvent.eventId, persistedClaimEventId]);
+
+  useEffect(() => {
     if (!loggedIn || !claimAccessGranted || !liveEvent.eventId) {
       return;
     }
@@ -1076,7 +1162,7 @@ function App() {
   }, [claimAccessGranted, liveEvent.eventId, loggedIn, user]);
 
   useEffect(() => {
-    if (!isEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
+    if (!isAttendeeEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
       setClaimAccessGranted(false);
       setClaimAccessStatus("");
       clearClaimAccessGrant();
@@ -1128,7 +1214,7 @@ function App() {
   }, [
     claimAccessCode,
     currentTime,
-    isEventLive,
+    isAttendeeEventLive,
     liveEvent.claimAccessSecret,
     liveEvent.eventId,
     loggedIn,
@@ -1331,7 +1417,7 @@ function App() {
 
   useEffect(() => {
     if (
-      !isEventLive ||
+      !isAttendeeEventLive ||
       !claimAccessGranted ||
       !loggedIn ||
       isCheckingAccess ||
@@ -1371,7 +1457,7 @@ function App() {
     effectiveClaimResult,
     isClaimWindowOpen,
     isCheckingAccess,
-    isEventLive,
+    isAttendeeEventLive,
     isMember,
     liveEvent.eventId,
     loggedIn,
@@ -1672,7 +1758,7 @@ function App() {
     );
   }
 
-  if (!isEventLive) {
+  if (!isAttendeeEventLive) {
     return (
       <ClosedEventPage
         authError={authError}

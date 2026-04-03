@@ -94,10 +94,10 @@ function ClaimResultCard({
       </p>
       {isClaimActive ? (
         <div className="claim-qr-inline-block">
+          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
           <div className="claim-qr-box">
             <QRCode value={claimQrPayload} size={180} />
           </div>
-          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
         </div>
       ) : null}
       <div className="claim-card-actions">

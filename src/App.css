@@ -36,10 +36,13 @@ body.modal-scroll-locked {
 }
 
 .control {
+  width: 100%;
   padding-bottom: 7rem;
 }
 
 .control-dashboard {
+  width: 100%;
+  max-width: 100%;
   transition: filter 0.2s ease, opacity 0.2s ease;
 }
 
@@ -63,6 +66,7 @@ body.modal-scroll-locked {
   justify-content: center;
   align-items: flex-start;
   min-height: 60vh;
+  padding: 1rem 0.75rem;
 }
 
 .entry-card,
@@ -202,9 +206,13 @@ body.modal-scroll-locked {
   margin-top: 1rem;
 }
 
+.claim-qr-inline-block .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
 .claim-qr-inline-block .claim-qr-box {
-  margin-top: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
 }
 
 .claim-qr-inline-block p:last-child {
@@ -228,7 +236,7 @@ body.modal-scroll-locked {
 }
 
 .claim-rules-modal {
-  width: min(100%, 42rem);
+  width: min(100%, 45rem);
   border-radius: 28px;
   background: #ffffff;
   border: 1px solid #d7d7d7;
@@ -396,9 +404,50 @@ body.modal-scroll-locked {
 }
 
 .queue-timer {
-  margin: 0.35rem 0 0.85rem;
+  margin: 0.35rem 0 0.4rem;
   font-size: 0.98rem;
   font-weight: 700;
+  color: #7b5200;
+}
+
+.queue-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 1.15rem;
+}
+
+.queue-summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid #e4e4e4;
+  border-radius: 16px;
+  background: #fffdf8;
+  text-align: left;
+}
+
+.queue-summary-card span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7b5200;
+}
+
+.queue-summary-card strong {
+  font-size: 1rem;
+  color: #24303d;
+}
+
+.queue-summary-card--alert {
+  background: #fff7d6;
+  border-color: #f0d58e;
+}
+
+.queue-summary-card--alert strong {
   color: #7b5200;
 }
 
@@ -426,7 +475,23 @@ body.modal-scroll-locked {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.roster-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.roster-primary span {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.roster-meta {
+  flex: 0 1 auto;
 }
 
 .roster-avatar {
@@ -470,6 +535,7 @@ body.modal-scroll-locked {
   color: #24303d;
   font-size: 0.9rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .roster-badge--member {
@@ -563,6 +629,57 @@ body.modal-scroll-locked {
 
 .event-modal-content {
   padding: .5rem 1.5rem 1.5rem;
+}
+
+.event-modal-form {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.event-modal-form .control-input-group {
+  margin-bottom: 1.15rem;
+}
+
+.event-modal-form .control-input-group input,
+.event-modal-form .control-input-group select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.event-modal-form .control-input-group--centered input,
+.event-modal-form .control-input-group--centered select {
+  width: min(100%, 32rem);
+}
+
+.event-modal-form .time-grid--centered {
+  grid-template-columns: repeat(2, minmax(0, 11rem));
+  column-gap: 0.85rem;
+  row-gap: 0.85rem;
+  margin-bottom: 1.15rem;
+}
+
+.event-modal-form .control-input-group--time {
+  width: min(100%, 11rem);
+}
+
+.event-modal-form .control-input-group--time input {
+  max-width: 11rem;
+}
+
+.event-modal-form .control-input-group--compact {
+  width: min(100%, 18rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.event-modal-form .control-input-group--compact input {
+  max-width: 8.5rem;
+  text-align: center;
+}
+
+.event-modal-form .control-input-group--compact .control-input-hint {
+  max-width: 18rem;
+  text-align: center;
 }
 
 .scanner-modal-header {
@@ -772,10 +889,10 @@ body.modal-scroll-locked {
   transform: translateX(-50%);
   z-index: 950;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 0.75rem;
-  width: min(92vw, 46rem);
+  width: min(calc(100vw - 1rem), 46rem);
   padding: 0.85rem;
   border: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 999px;
@@ -785,7 +902,8 @@ body.modal-scroll-locked {
 }
 
 .bottom-navbar-button {
-  flex: 1 1 12rem;
+  flex: 1 1 0;
+  min-width: 0;
   margin: 0;
   display: inline-flex;
   align-items: center;
@@ -1108,12 +1226,12 @@ button:disabled {
 .display-feed-overlay {
   position: fixed;
   left: 1.5rem;
-  bottom: 12.5rem;
+  bottom: 1.25rem;
   z-index: 970;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.6rem;
+  gap: 0.35rem;
   max-width: min(26rem, calc(100vw - 3rem));
   pointer-events: none;
 }
@@ -1121,7 +1239,7 @@ button:disabled {
 .display-feed-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
   color: #111111;
   text-align: left;
   text-shadow: 0 1px 10px rgba(255, 255, 255, 0.9);
@@ -1281,8 +1399,52 @@ li {
     padding: 1rem;
   }
 
+  .event-modal {
+    width: min(100%, 36rem);
+  }
+
+  .event-modal-content {
+    padding: 0.35rem 1rem 1rem;
+  }
+
+  .event-modal-form .control-input-group {
+    gap: 0.4rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .event-modal-form .control-input-group input,
+  .event-modal-form .control-input-group select {
+    padding: 0.75rem 0.85rem;
+    font-size: 0.98rem;
+  }
+
+  .event-modal-form .time-grid--centered {
+    grid-template-columns: repeat(2, minmax(0, 10rem));
+    column-gap: 0.7rem;
+    row-gap: 0.7rem;
+    margin-bottom: 0.95rem;
+  }
+
+  .event-modal-form .control-input-group--time,
+  .event-modal-form .control-input-group--time input {
+    max-width: 10rem;
+  }
+
+  .event-modal-form .control-input-group--compact {
+    width: min(100%, 16rem);
+  }
+
+  .event-modal-form .control-input-group--compact input {
+    max-width: 7.5rem;
+  }
+
   .control-actions {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-primary-action {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .mode-select,
@@ -1292,10 +1454,48 @@ li {
     padding: 1rem;
   }
 
+  .control {
+    overflow-x: clip;
+    padding-bottom: 9rem;
+  }
+
+  .claim-page--focused {
+    padding: 0.75rem 0.5rem;
+  }
+
   .entry-card,
   .link-card,
   .stat-card {
-    padding: 1.25rem;
+    padding: 1rem;
+  }
+
+  .stats-grid {
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+  }
+
+  .stats-grid .stat-card {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.85rem 0.65rem;
+  }
+
+  .stats-grid .stat-card strong {
+    font-size: 0.98rem;
+  }
+
+  .stats-grid .stat-card span {
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+  }
+
+  .queue-summary {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .queue-summary-card {
+    padding: 0.7rem 0.8rem;
   }
 
   .display .number {
@@ -1331,7 +1531,7 @@ li {
   .display-feed-overlay {
     left: 0.75rem;
     right: 0.75rem;
-    bottom: 16.5rem;
+    bottom: 1rem;
     max-width: none;
   }
 
@@ -1369,7 +1569,119 @@ li {
     max-width: 16rem;
   }
 
+  .roster-row {
+    gap: 0.65rem;
+  }
+
+  .queue-card,
+  .roster-card {
+    max-width: 100%;
+  }
+
+  .roster-card {
+    max-height: none;
+  }
+
+  .roster-card .roster-list {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+
+  .roster-primary,
+  .roster-meta {
+    gap: 0.45rem;
+  }
+
+  .roster-primary strong {
+    min-width: 2.5rem;
+    font-size: 0.95rem;
+  }
+
+  .roster-primary span {
+    font-size: 0.92rem;
+  }
+
+  .roster-avatar {
+    width: 2.1rem;
+    height: 2.1rem;
+    flex-basis: 2.1rem;
+  }
+
+  .roster-badge {
+    padding: 0.22rem 0.5rem;
+    font-size: 0.76rem;
+  }
+
+  .bottom-navbar {
+    gap: 0.5rem;
+    padding: 0.65rem;
+  }
+
+  .bottom-navbar-button {
+    padding: 0.8rem 0.7rem;
+    font-size: 0.95rem;
+  }
+
   .bottom-navbar {
     border-radius: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .event-modal {
+    border-radius: 24px;
+  }
+
+  .event-modal-header {
+    padding: 0.7rem 0.7rem 0;
+  }
+
+  .event-modal-close {
+    width: 2.45rem;
+    height: 2.45rem;
+    font-size: 1.4rem;
+  }
+
+  .event-modal-content {
+    padding: 0.2rem 0.85rem 0.9rem;
+  }
+
+  .event-modal-form .control-input-group {
+    gap: 0.3rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .event-modal-form .control-input-group span {
+    font-size: 0.94rem;
+  }
+
+  .event-modal-form .control-input-group input,
+  .event-modal-form .control-input-group select {
+    padding: 0.68rem 0.78rem;
+    font-size: 0.95rem;
+    border-radius: 9px;
+  }
+
+  .event-modal-form .control-input-hint {
+    max-width: 15rem;
+    font-size: 0.86rem;
+  }
+
+  .event-modal-form .time-grid--centered {
+    grid-template-columns: minmax(0, 10rem);
+    row-gap: 0.6rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .event-modal-form .control-input-group--time,
+  .event-modal-form .control-input-group--time input,
+  .event-modal-form .control-input-group--compact,
+  .event-modal-form .control-input-group--compact input {
+    max-width: 10rem;
+  }
+
+  .roster-badge--member,
+  .roster-badge--guest {
+    display: none;
   }
 }
