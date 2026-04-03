@@ -97,6 +97,22 @@ const formatTimeRange = (start, end) => {
   return `${formatClockTime(start)} - ${formatClockTime(end)}`;
 };
 
+const getTodayTime = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date();
+  const [hours, minutes] = value.split(":").map(Number);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+};
+
 const buildEventId = () =>
   globalThis.crypto?.randomUUID?.() ?? `event-${Date.now()}`;
 
@@ -107,8 +123,6 @@ function App() {
   const [controlForm, setControlForm] = useState(initialControlForm);
   const [controlMessage, setControlMessage] = useState("");
   const [controlSaving, setControlSaving] = useState(false);
-  const [claimChoice, setClaimChoice] = useState(null);
-  const [guestEmail, setGuestEmail] = useState("");
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
   const [claimError, setClaimError] = useState("");
@@ -116,6 +130,7 @@ function App() {
   const [scanFeedback, setScanFeedback] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
   const scannerRef = useRef(null);
@@ -136,13 +151,28 @@ function App() {
   const dingSound = useRef(new Audio(sound));
   const liveState = liveEvent.state;
   const { current, finalCall: isFinalCall } = liveState;
-  const claimUrl = getScreenUrl(null);
-  const controlUrl = getScreenUrl("control");
   const displayUrl = getScreenUrl("display");
   const isCheckingAccess = authLoading || roleLoading;
   const isEventLive = liveEvent.active;
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
+  const eventStartTime = getTodayTime(liveEvent.timeframeStart);
+  const memberEarlyAccessTime = eventStartTime
+    ? new Date(eventStartTime.getTime() - 30 * 60 * 1000)
+    : null;
+  const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
+  const isClaimWindowOpen =
+    !eventStartTime ||
+    currentTime >= eventStartTime.getTime() ||
+    (isMember && memberEarlyAccessTime && currentTime >= memberEarlyAccessTime.getTime());
+  const liveCallLabel =
+    liveState.current === 0 ? "Starting Soon" : `${liveState.last + 1}-${liveState.current}`;
+  const eventStartLabel = liveEvent.timeframeStart
+    ? formatClockTime(liveEvent.timeframeStart)
+    : "the event start";
+  const memberEarlyAccessLabel = memberEarlyAccessTime
+    ? formatClockTime(memberEarlyAccessTime.toTimeString().slice(0, 5))
+    : eventStartLabel;
   const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
   const hasReachedClaimNumber =
     typeof claimRecord?.number === "number" && liveState.current >= claimRecord.number;
@@ -163,19 +193,10 @@ function App() {
   };
 
   const resetClaimFlow = () => {
-    setClaimChoice(null);
-    setGuestEmail("");
     setClaimResult(null);
     setClaimRecord(null);
     setClaimError("");
     setClaimLoading(false);
-  };
-
-  const selectClaimChoice = (nextChoice) => {
-    setClaimChoice(nextChoice);
-    setClaimRecord(null);
-    setClaimError("");
-    setClaimResult(null);
   };
 
   useEffect(() => {
@@ -193,6 +214,16 @@ function App() {
         console.error(error.message || "Unable to connect to Firebase.");
       },
     });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -267,6 +298,20 @@ function App() {
 
     setScannerActive(false);
   }, [hasFullAccess, isEventLive, mode]);
+
+  useEffect(() => {
+    if (!scanFeedback) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setScanFeedback(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [scanFeedback]);
 
   useEffect(() => {
     scanHandlerRef.current = async (rawValue) => {
@@ -358,19 +403,13 @@ function App() {
 
   useEffect(() => {
     if (
-      claimChoice !== "member" ||
       !isEventLive ||
       !loggedIn ||
       isCheckingAccess ||
+      !isClaimWindowOpen ||
       claimLoading ||
       claimResult
     ) {
-      return;
-    }
-
-    if (!isMember) {
-      setClaimChoice(null);
-      setClaimError("Your Discord account is not a verified club member.");
       return;
     }
 
@@ -397,12 +436,11 @@ function App() {
 
     void assignDiscordNumber();
   }, [
-    claimChoice,
     claimLoading,
     claimResult,
+    isClaimWindowOpen,
     isCheckingAccess,
     isEventLive,
-    isMember,
     liveEvent.eventId,
     loggedIn,
     user,
@@ -433,14 +471,6 @@ function App() {
       current: liveState.current + amount,
       finalCall: false,
       last: liveState.current,
-    });
-  };
-
-  const resetNumbers = () => {
-    persistState({
-      ...initialState,
-      qrUrl: liveState.qrUrl,
-      title: liveState.title,
     });
   };
 
@@ -557,36 +587,6 @@ function App() {
     }
   };
 
-  const handleGuestClaim = async (event) => {
-    event.preventDefault();
-
-    const normalizedEmail = guestEmail.trim().toLowerCase();
-
-    if (!normalizedEmail.endsWith("@purdue.edu")) {
-      setClaimError("Use your @purdue.edu email address.");
-      return;
-    }
-
-    setClaimLoading(true);
-
-    try {
-      const result = await claimEventNumber({
-        claimKey: `email:${normalizedEmail}`,
-        displayName: normalizedEmail,
-        email: normalizedEmail,
-        eventId: liveEvent.eventId,
-        participantType: "email",
-      });
-
-      setClaimResult(result);
-      setClaimError("");
-    } catch (error) {
-      setClaimError(error.message || "Unable to assign a number right now.");
-    } finally {
-      setClaimLoading(false);
-    }
-  };
-
   const renderControlAccessDenied = () => (
     <div className="entry-screen">
       <div className="entry-card">
@@ -660,6 +660,16 @@ function App() {
       <button className="secondary-button" onClick={resetClaimFlow}>
         Back
       </button>
+      <div className="claim-status-grid">
+        <div className="stat-card">
+          <span>Round</span>
+          <strong>{currentRound}</strong>
+        </div>
+        <div className="stat-card">
+          <span>Currently Calling</span>
+          <strong>{liveCallLabel}</strong>
+        </div>
+      </div>
       <div className="claim-qr-panel">
         {claimRecord ? (
           showClaimQr ? (
@@ -696,7 +706,7 @@ function App() {
       <p className="eyebrow">Live Event</p>
       <h1>{liveState.title}</h1>
       {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-      <h2>Discord Member Login</h2>
+      <h2>Claim Your Number</h2>
       <p>Log in with Discord and we&apos;ll assign your number automatically.</p>
       {!loggedIn ? (
         <button onClick={startOAuthGrant} disabled={isCheckingAccess || claimLoading}>
@@ -704,11 +714,24 @@ function App() {
         </button>
       ) : null}
       {loggedIn && isCheckingAccess ? <p>Checking your membership…</p> : null}
-      {loggedIn && isMember && claimLoading ? <p>Assigning your number…</p> : null}
+      {loggedIn && claimLoading ? <p>Assigning your number…</p> : null}
+      {loggedIn && !isCheckingAccess && !claimLoading && !isClaimWindowOpen ? (
+        <p>
+          {isMember && memberEarlyAccessTime
+            ? `Logged in. Because you have the member role, you can claim starting at ${memberEarlyAccessLabel}.`
+            : `Logged in. You need to wait for the event to start at ${eventStartLabel}.`}
+        </p>
+      ) : null}
+      {loggedIn && !isCheckingAccess && !claimLoading && isClaimWindowOpen && !claimResult ? (
+        <p>
+          {isMember
+            ? isEventStarted
+              ? "Logged in with the member role. Your claim will be assigned automatically."
+              : "Logged in with the member role. Early claim access is open, so your claim will be assigned automatically."
+            : "Logged in. The event has started, so your claim will be assigned automatically."}
+        </p>
+      ) : null}
       {claimError ? <p className="entry-message">{claimError}</p> : null}
-      <button className="secondary-button" onClick={resetClaimFlow}>
-        Back
-      </button>
       {loggedIn ? (
         <button className="secondary-button" onClick={logout}>
           Logout
@@ -717,62 +740,10 @@ function App() {
     </div>
   );
 
-  const renderGuestClaimCard = () => (
-    <form className="entry-card claim-modal-card" onSubmit={handleGuestClaim}>
-      <p className="eyebrow">Live Event</p>
-      <h1>{liveState.title}</h1>
-      {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-      <h2>Purdue Email</h2>
-      <p>Enter your @purdue.edu email and we&apos;ll assign your number.</p>
-      <label className="control-input-group">
-        <span>Purdue Email</span>
-        <input
-          type="email"
-          value={guestEmail}
-          onChange={(event) => setGuestEmail(event.target.value)}
-          placeholder="name@purdue.edu"
-        />
-      </label>
-      {claimError ? <p className="entry-message">{claimError}</p> : null}
-      <button type="submit" disabled={claimLoading}>
-        {claimLoading ? "Assigning Number..." : "Claim Number"}
-      </button>
-      <button className="secondary-button" type="button" onClick={resetClaimFlow}>
-        Back
-      </button>
-    </form>
-  );
-
-  const isClaimFlowFocused = Boolean(claimChoice || claimResult);
-
   const renderClaimPage = () => (
-    <div className={`claim-page${isClaimFlowFocused ? " claim-page--focused" : ""}`}>
-      {!isClaimFlowFocused ? (
-        <div className="entry-card hero-card">
-          <p className="eyebrow">Live Event</p>
-          <h1>{liveState.title}</h1>
-          {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-          <h2>Are you a member?</h2>
-          <div className="choice-row">
-            <button onClick={() => selectClaimChoice("member")}>Yes</button>
-            <button className="secondary-button" onClick={() => selectClaimChoice("guest")}>
-              No
-            </button>
-          </div>
-          {claimError && !claimChoice ? (
-            <p className="entry-message">{claimError}</p>
-          ) : null}
-          {loggedIn && hasFullAccess ? (
-            <button className="secondary-button" onClick={() => changeMode("control")}>
-              Open Control Panel
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
+    <div className="claim-page claim-page--focused">
       {claimResult ? renderClaimResult() : null}
-      {!claimResult && claimChoice === "member" ? renderMemberClaimCard() : null}
-      {!claimResult && claimChoice === "guest" ? renderGuestClaimCard() : null}
+      {!claimResult ? renderMemberClaimCard() : null}
     </div>
   );
 
@@ -860,85 +831,76 @@ function App() {
           </button>
         </div>
         <h1>Control Panel</h1>
-        <div className="link-card-row">
-          <div className="link-card">
-            <p>Attendee sign-up page</p>
-            <a href={claimUrl} target="_blank" rel="noreferrer">
-              {claimUrl}
-            </a>
-          </div>
+        <div className="link-card-row link-card-row--single">
           <div className="link-card">
             <p>Display screen</p>
             <a href={displayUrl} target="_blank" rel="noreferrer">
               {displayUrl}
             </a>
           </div>
-          <div className="link-card">
-            <p>Control screen</p>
-            <a href={controlUrl} target="_blank" rel="noreferrer">
-              {controlUrl}
-            </a>
-          </div>
         </div>
 
-        <form className="control-form" onSubmit={isEventLive ? handleSaveEventDetails : handleStartEvent}>
-          <label className="control-input-group">
-            <span>Event Title</span>
-            <input
-              type="text"
-              value={controlForm.title}
-              onChange={handleControlFieldChange("title")}
-              placeholder="Enter event title"
-            />
-          </label>
-          <label className="control-input-group">
-            <span>QR Code URL</span>
-            <input
-              type="url"
-              value={controlForm.qrUrl}
-              onChange={handleControlFieldChange("qrUrl")}
-              placeholder="Enter QR code destination"
-            />
-          </label>
-          <div className="time-grid">
-            <label className="control-input-group">
-              <span>Start Time</span>
+        <div className="entry-card control-settings-card">
+          <h2>Event Settings</h2>
+          <form className="control-form" onSubmit={isEventLive ? handleSaveEventDetails : handleStartEvent}>
+            <label className="control-input-group control-input-group--centered">
+              <span>Event Title</span>
               <input
-                type="time"
-                value={controlForm.timeframeStart}
-                onChange={handleControlFieldChange("timeframeStart")}
+                type="text"
+                value={controlForm.title}
+                onChange={handleControlFieldChange("title")}
+                placeholder="Enter event title"
               />
             </label>
-            <label className="control-input-group">
-              <span>End Time</span>
+            <label className="control-input-group control-input-group--centered">
+              <span>QR Code URL</span>
               <input
-                type="time"
-                value={controlForm.timeframeEnd}
-                onChange={handleControlFieldChange("timeframeEnd")}
+                type="url"
+                value={controlForm.qrUrl}
+                onChange={handleControlFieldChange("qrUrl")}
+                placeholder="Enter QR code destination"
               />
             </label>
-          </div>
-          {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
-          <div className="control-actions">
-            <button type="submit" disabled={controlSaving}>
-              {controlSaving
-                ? "Saving..."
-                : isEventLive
-                  ? "Save Event Details"
-                  : "Start Event"}
-            </button>
-            {isEventLive ? (
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={handleCloseEvent}
-                disabled={controlSaving}
-              >
-                End Event
+            <div className="time-grid time-grid--centered">
+              <label className="control-input-group control-input-group--centered control-input-group--time">
+                <span>Start Time</span>
+                <input
+                  type="time"
+                  value={controlForm.timeframeStart}
+                  onChange={handleControlFieldChange("timeframeStart")}
+                />
+              </label>
+              <label className="control-input-group control-input-group--centered control-input-group--time">
+                <span>End Time</span>
+                <input
+                  type="time"
+                  value={controlForm.timeframeEnd}
+                  onChange={handleControlFieldChange("timeframeEnd")}
+                />
+              </label>
+            </div>
+            {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
+            <div className="control-actions">
+              <button type="submit" disabled={controlSaving}>
+                {controlSaving
+                  ? "Saving..."
+                  : isEventLive
+                    ? "Save Event Details"
+                    : "Start Event"}
               </button>
-            ) : null}
-          </div>
-        </form>
+              {isEventLive ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={handleCloseEvent}
+                  disabled={controlSaving}
+                >
+                  End Event
+                </button>
+              ) : null}
+            </div>
+          </form>
+        </div>
 
         {isEventLive ? (
           <>
@@ -972,42 +934,38 @@ function App() {
                   type="button"
                   onClick={() => {
                     setScanFeedback(null);
-                    setScannerActive((currentValue) => !currentValue);
+                    setScannerActive(true);
                   }}
                   disabled={scanLoading}
                 >
-                  {scannerActive ? "Stop Scanner" : "Start Scanner"}
+                  Open Scanner
                 </button>
               </div>
-              <div className="scanner-preview">
-                {scannerActive ? (
-                  <video ref={scannerVideoRef} className="scanner-video" muted playsInline />
-                ) : (
-                  <p>Start the scanner to use your camera.</p>
-                )}
-              </div>
-              {scanLoading ? <p>Processing scan…</p> : null}
-              {scanFeedback ? (
-                <p className={`status-message status-message--${scanFeedback.tone}`}>
-                  {scanFeedback.message}
-                </p>
-              ) : null}
+              <p className="scanner-helper-text">
+                The camera only opens after you launch the fullscreen scanner.
+              </p>
             </div>
 
             <h2>Round {liveState.round}</h2>
             <h3>
               Current: {liveState.last + 1}–{liveState.current}
             </h3>
-            <div>
-              <button onClick={() => increment(5)}>+5</button>
-              <button onClick={() => increment(10)}>+10</button>
-              <button onClick={() => increment(20)}>+20</button>
-            </div>
-            <div>
-              <button onClick={resetNumbers}>Reset</button>
-              <button onClick={activateFinalCall}>Final Call</button>
-              <button onClick={newRound}>Start New Round</button>
-            </div>
+            {!liveState.finalCall ? (
+              <>
+                <div>
+                  <button onClick={() => increment(5)}>+5</button>
+                  <button onClick={() => increment(10)}>+10</button>
+                  <button onClick={() => increment(20)}>+20</button>
+                </div>
+                <div>
+                  <button onClick={activateFinalCall}>Final Call</button>
+                </div>
+              </>
+            ) : (
+              <div>
+                <button onClick={newRound}>Start Next Round</button>
+              </div>
+            )}
           </>
         ) : (
           <div className="entry-card compact-card">
@@ -1015,6 +973,35 @@ function App() {
             <p>Start a live event to open attendee sign-ups and the display screen.</p>
           </div>
         )}
+
+        {scannerActive ? (
+          <div className="scanner-modal" role="dialog" aria-modal="true" aria-label="Claim scanner">
+            <div className="scanner-modal-header">
+              <button
+                type="button"
+                className="scanner-close-button"
+                onClick={() => setScannerActive(false)}
+                aria-label="Close scanner"
+              >
+                ×
+              </button>
+            </div>
+            <div className="scanner-modal-body">
+              <video ref={scannerVideoRef} className="scanner-video scanner-video--modal" muted playsInline />
+            </div>
+            <div className="scanner-modal-footer">
+              <p>Point the camera at an attendee&apos;s QR code.</p>
+            </div>
+            {scanLoading ? (
+              <div className="scanner-toast scanner-toast--loading">Processing scan…</div>
+            ) : null}
+            {scanFeedback ? (
+              <div className={`scanner-toast scanner-toast--${scanFeedback.tone}`}>
+                {scanFeedback.message}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };

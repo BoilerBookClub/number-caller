@@ -65,6 +65,13 @@
   border-top: 1px solid #e4e4e4;
 }
 
+.claim-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
 .claim-qr-box,
 .scanner-preview {
   margin: 1rem auto;
@@ -82,6 +89,10 @@
   margin-right: auto;
 }
 
+.scanner-helper-text {
+  color: #5a5a5a;
+}
+
 .scanner-preview {
   width: min(100%, 30rem);
   min-height: 17rem;
@@ -94,6 +105,90 @@
   display: block;
   width: min(100%, 28rem);
   border-radius: 16px;
+}
+
+.scanner-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(12, 16, 20, 0.96);
+  display: flex;
+  flex-direction: column;
+}
+
+.scanner-modal-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 1rem;
+}
+
+.scanner-close-button {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.scanner-modal-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1rem 1rem;
+}
+
+.scanner-video--modal {
+  width: min(100vw, 100%);
+  max-width: 100%;
+  max-height: calc(100vh - 10rem);
+  object-fit: cover;
+  border-radius: 24px;
+}
+
+.scanner-modal-footer {
+  padding: 0 1rem 1.25rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.scanner-modal-footer p {
+  margin: 0;
+}
+
+.scanner-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  width: min(92vw, 32rem);
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  box-shadow: #00000040 0 10px 30px;
+  font-weight: 700;
+  z-index: 1001;
+}
+
+.scanner-toast--success {
+  background: #e6f7ea;
+  color: #186a3b;
+}
+
+.scanner-toast--error {
+  background: #fdeceb;
+  color: #a32626;
+}
+
+.scanner-toast--info {
+  background: #eaf3ff;
+  color: #225a9a;
+}
+
+.scanner-toast--loading {
+  background: #fff7d6;
+  color: #7b5200;
 }
 
 .status-message {
@@ -192,8 +287,13 @@
 }
 
 .control-form {
-  margin: 0 auto 2rem;
+  margin: 0 auto;
   max-width: 58rem;
+}
+
+.control-settings-card {
+  max-width: 58rem;
+  margin: 0 auto 2rem;
 }
 
 .control-input-group {
@@ -215,6 +315,36 @@
   font-size: 1.05rem;
   border-radius: 10px;
   border: 1px solid #7d7d7d;
+}
+
+.control-input-group--centered {
+  align-items: center;
+  text-align: center;
+}
+
+.control-input-group--centered input {
+  width: min(100%, 36rem);
+}
+
+.control-input-group--time {
+  flex: 1 1 220px;
+}
+
+.control-input-group--time input {
+  width: 100%;
+}
+
+.time-grid--centered {
+  justify-content: center;
+  align-items: stretch;
+}
+
+.link-card-row--single {
+  justify-content: center;
+}
+
+.link-card-row--single .link-card {
+  max-width: 32rem;
 }
 
 .link-card a {
