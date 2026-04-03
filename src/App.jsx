@@ -29,10 +29,10 @@ import {
 import useDiscordLogin from "./useDiscordLogin";
 
 const defaultQrUrl =
-  "https://www.boilerbookclub.com/announcements/reading-carnival-9-2025-s2tex-zke4e";
+  "https://www.boilerbookclub.com/announcements/";
 
 const initialState = {
-  title: "READING CARNIVAL",
+  title: "BOILER BOOK CLUB EVENT",
   qrUrl: defaultQrUrl,
   current: 0,
   last: 0,
@@ -381,7 +381,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!loggedIn || !hasFullAccess || isCheckingAccess || mode === "control") {
+    if (!loggedIn || !hasFullAccess || isCheckingAccess || mode !== null) {
       return;
     }
 

@@ -120,6 +120,13 @@
   margin-bottom: 1.5rem;
 }
 
+.control-event-header h1 {
+  font-family: "Londrina Shadow", sans-serif;
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  line-height: 0.9;
+  margin-bottom: 0.5rem;
+}
+
 .control-event-subtitle {
   margin: 0.35rem 0;
   color: #5a5a5a;
@@ -554,6 +561,11 @@ button:disabled {
   font-size: clamp(4rem, 14vw, 7rem);
   font-weight: 900;
   line-height: 1;
+}
+
+.assigned-number.rainbow-text {
+  font-family: "Freckle Face", system-ui;
+  line-height: 0.85;
 }
 
 .empty-state {
