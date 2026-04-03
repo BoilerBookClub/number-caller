@@ -1,4 +1,5 @@
 import QRCode from "react-qr-code";
+import bbcLogo from "../assets/bbc_logo.png";
 import { getEventTitleClassName } from "../titleFonts";
 
 function DisplayPage({
@@ -24,6 +25,9 @@ function DisplayPage({
 
   return (
     <div className="display">
+      <div className="display-logo-wrap">
+        <img src={bbcLogo} alt="Boiler Book Club logo" className="display-logo" />
+      </div>
       <p className="eyebrow">{liveEvent.timeframeLabel}</p>
       <h1 className={getEventTitleClassName(liveState.titleFont, "carnival")}>{liveState.title}</h1>
       <h2 style={{ color: "#7b5200" }}>ROUND {liveState.round}</h2>

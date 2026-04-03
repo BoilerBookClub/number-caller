@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import {
   collection,
   doc,
+  getDoc,
   getFirestore,
   onSnapshot,
   runTransaction,
@@ -95,6 +96,16 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
   );
 };
 
+export const readLiveEventOnce = async () => {
+  if (!firebaseEnabled) {
+    return null;
+  }
+
+  const snapshot = await getDoc(liveStateRef);
+
+  return snapshot.exists() ? snapshot.data() : null;
+};
+
 export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
   if (!firebaseEnabled || !claimId) {
     return () => {};
@@ -112,6 +123,16 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
     },
     onError,
   );
+};
+
+export const readClaimOnce = async ({ claimId }) => {
+  if (!firebaseEnabled || !claimId) {
+    return null;
+  }
+
+  const snapshot = await getDoc(getClaimRef(claimId));
+
+  return snapshot.exists() ? snapshot.data() : null;
 };
 
 export const subscribeToClaims = ({ onClaims, onError }) => {

@@ -26,6 +26,8 @@ import {
   createLiveEvent,
   firebaseEnabled,
   getModeFromUrl,
+  readClaimOnce,
+  readLiveEventOnce,
   getScreenUrl,
   pushLiveState,
   redeemClaimByQr,
@@ -321,7 +323,6 @@ function App() {
   const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState(false);
   const [isClaimRulesOpen, setIsClaimRulesOpen] = useState(false);
   const [areClaimNotificationsEnabled, setAreClaimNotificationsEnabled] = useState(false);
-  const [claimNotificationMessage, setClaimNotificationMessage] = useState("");
   const [notificationPermission, setNotificationPermission] = useState(
     getBrowserNotificationPermission(),
   );
@@ -484,7 +485,6 @@ function App() {
 
   const resetClaimFlow = () => {
     setAreClaimNotificationsEnabled(false);
-    setClaimNotificationMessage("");
     setClaimResult(null);
     setClaimRecord(null);
     setClaimError("");
@@ -507,7 +507,6 @@ function App() {
   const toggleClaimNotifications = async () => {
     if (!("Notification" in window)) {
       setNotificationPermission("unsupported");
-      setClaimNotificationMessage("Browser notifications are not supported on this device.");
       return;
     }
 
@@ -517,7 +516,6 @@ function App() {
       }
 
       setAreClaimNotificationsEnabled(false);
-      setClaimNotificationMessage("Notifications turned off.");
       setNotificationPermission(window.Notification.permission);
       return;
     }
@@ -531,7 +529,6 @@ function App() {
     setNotificationPermission(permission);
 
     if (permission !== "granted") {
-      setClaimNotificationMessage("Notifications are blocked. Allow them in your browser to get alerts.");
       return;
     }
 
@@ -540,7 +537,6 @@ function App() {
     }
 
     setAreClaimNotificationsEnabled(true);
-    setClaimNotificationMessage("Notifications turned on. We’ll alert you when your number is called.");
   };
 
   const closeEventDetailsModal = () => {
@@ -578,6 +574,52 @@ function App() {
         console.error(error.message || "Unable to connect to Firebase.");
       },
     });
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseEnabled) {
+      return undefined;
+    }
+
+    let isDisposed = false;
+
+    const syncLiveEvent = async () => {
+      try {
+        const nextEvent = await readLiveEventOnce();
+
+        if (isDisposed) {
+          return;
+        }
+
+        setLiveEvent(normalizeLiveEvent(nextEvent));
+        setIsHydrated(true);
+      } catch (error) {
+        if (!isDisposed) {
+          setIsHydrated(true);
+          console.error(error.message || "Unable to refresh live event state.");
+        }
+      }
+    };
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void syncLiveEvent();
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void syncLiveEvent();
+    }, 5_000);
+
+    window.addEventListener("focus", handleVisibilityRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleVisibilityRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -670,7 +712,6 @@ function App() {
   useEffect(() => {
     if (!effectiveClaimResult || !claimNotificationsEnabledKey) {
       setAreClaimNotificationsEnabled(false);
-      setClaimNotificationMessage("");
       return;
     }
 
@@ -713,7 +754,7 @@ function App() {
 
       window.localStorage.setItem(claimLastNotifiedRoundKey, String(currentRound));
     } catch {
-      setClaimNotificationMessage("We couldn’t send a browser notification on this device.");
+      setNotificationPermission(getBrowserNotificationPermission());
     }
   }, [
     areClaimNotificationsEnabled,
@@ -788,6 +829,72 @@ function App() {
         console.error(error.message || "Unable to sync claim status.");
       },
     });
+  }, [attendeeClaimId]);
+
+  useEffect(() => {
+    if (!attendeeClaimId) {
+      return undefined;
+    }
+
+    let isDisposed = false;
+
+    const syncClaimRecord = async () => {
+      try {
+        const nextClaim = await readClaimOnce({ claimId: attendeeClaimId });
+
+        if (isDisposed) {
+          return;
+        }
+
+        const nextClaimRecord = normalizeClaimRecord(attendeeClaimId, nextClaim);
+
+        setClaimRecord(nextClaimRecord);
+        setClaimResult((currentResult) => {
+          if (!nextClaimRecord) {
+            return currentResult?.claimId === attendeeClaimId ? null : currentResult;
+          }
+
+          const nextClaimResult = buildClaimResultFromRecord(nextClaimRecord);
+
+          if (
+            currentResult?.claimId === nextClaimResult.claimId &&
+            currentResult.number === nextClaimResult.number &&
+            currentResult.qrToken === nextClaimResult.qrToken &&
+            currentResult.redeemedRound === nextClaimResult.redeemedRound &&
+            currentResult.itemsClaimedCount === nextClaimResult.itemsClaimedCount &&
+            currentResult.isMember === nextClaimResult.isMember
+          ) {
+            return currentResult;
+          }
+
+          return nextClaimResult;
+        });
+      } catch (error) {
+        if (!isDisposed) {
+          console.error(error.message || "Unable to refresh claim status.");
+        }
+      }
+    };
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void syncClaimRecord();
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void syncClaimRecord();
+    }, 3_000);
+
+    window.addEventListener("focus", handleVisibilityRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleVisibilityRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
   }, [attendeeClaimId]);
 
   useEffect(() => {
@@ -1380,7 +1487,6 @@ function App() {
   return (
     <ClaimPage
       areClaimNotificationsEnabled={areClaimNotificationsEnabled}
-      claimNotificationMessage={claimNotificationMessage}
       claimError={claimError}
       claimLoading={claimLoading}
       claimQrPayload={claimQrPayload}

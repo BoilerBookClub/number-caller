@@ -65,6 +65,23 @@
   margin-top: 0;
 }
 
+.entry-heading-with-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.inline-logo {
+  display: block;
+  object-fit: contain;
+}
+
+.inline-logo--heading {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
 .hero-card {
   grid-column: 1 / -1;
 }
@@ -77,6 +94,50 @@
   position: relative;
   width: min(100%, 34rem);
   margin: 0 auto;
+}
+
+.claim-corner-button {
+  position: absolute;
+  top: 1rem;
+  z-index: 1;
+  width: 3rem;
+  height: 3rem;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.claim-corner-button--left {
+  left: 1rem;
+}
+
+.claim-corner-button--right {
+  right: 1rem;
+}
+
+.claim-corner-button--active {
+  background: #111111;
+  border-color: #111111;
+}
+
+.claim-corner-button--active .button-icon {
+  filter: brightness(0) invert(1);
+}
+
+.claim-ticket-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.claim-ticket-logo {
+  display: block;
+  width: 4.75rem;
+  height: 4.75rem;
+  object-fit: contain;
 }
 
 .claim-modal-card--active {
@@ -578,6 +639,11 @@
   color: #7b5200;
 }
 
+.eyebrow--active {
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
 .entry-card p,
 .link-card p {
   margin-bottom: 1rem;
@@ -872,8 +938,55 @@ button:disabled {
 
 .assigned-number.rainbow-text {
   line-height: 0.85;
+  background: linear-gradient(
+    270deg,
+    #ff6363,
+    #ffbe5c,
+    #eeee60,
+    #76f76f,
+    #76adff,
+    #e580ff,
+    #ff86ce,
+    #ff6363
+  );
   background-size: 1800% 1800%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   animation: rainbowMove 18s linear infinite;
+}
+
+.rainbow-text {
+  background: linear-gradient(
+    270deg,
+    #ff6363,
+    #ffbe5c,
+    #eeee60,
+    #76f76f,
+    #76adff,
+    #e580ff,
+    #ff86ce,
+    #ff6363
+  );
+  background-size: 1800% 1800%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: rainbowMove 18s linear infinite;
+}
+
+@keyframes rainbowMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 @keyframes rainbowBorderMove {
@@ -931,6 +1044,19 @@ button:disabled {
   display: flex;
   justify-content: center;
   margin-top: 2.5rem;
+}
+
+.display-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
+.display-logo {
+  display: block;
+  width: clamp(4rem, 10vw, 6.5rem);
+  height: clamp(4rem, 10vw, 6.5rem);
+  object-fit: contain;
 }
 
 li {

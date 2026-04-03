@@ -1,9 +1,11 @@
 import QRCode from "react-qr-code";
+import bbcLogo from "../assets/bbc_logo.png";
+import infoIcon from "../assets/info.svg";
+import notificationIcon from "../assets/notification.svg";
 import { getEventTitleClassName } from "../titleFonts";
 
 function ClaimRulesModal({
   areClaimNotificationsEnabled,
-  claimNotificationMessage,
   liveState,
   notificationPermission,
   onAcknowledgeRules,
@@ -46,9 +48,6 @@ function ClaimRulesModal({
               Got it!
             </button>
           </div>
-          {claimNotificationMessage ? (
-            <p className="status-message status-message--info">{claimNotificationMessage}</p>
-          ) : null}
         </div>
       </div>
     </div>
@@ -57,7 +56,6 @@ function ClaimRulesModal({
 
 function ClaimResultCard({
   areClaimNotificationsEnabled,
-  claimNotificationMessage,
   claimQrPayload,
   claimRecord,
   claimResult,
@@ -78,7 +76,30 @@ function ClaimResultCard({
 
   return (
     <div className={`entry-card assigned-card claim-modal-card${showClaimQr ? " claim-modal-card--active" : ""}`}>
-      <p className="eyebrow">{showClaimQr ? "You're up!" : "You're in line"}</p>
+      <button
+        className={`secondary-button claim-corner-button claim-corner-button--left${areClaimNotificationsEnabled ? " claim-corner-button--active" : ""}`}
+        type="button"
+        onClick={onToggleClaimNotifications}
+        aria-label={notificationButtonLabel}
+        title={notificationButtonLabel}
+      >
+        <img src={notificationIcon} alt="" className="button-icon" />
+      </button>
+      <button
+        className="secondary-button claim-corner-button claim-corner-button--right"
+        type="button"
+        onClick={onOpenClaimRules}
+        aria-label="Read event info"
+        title="Read event info"
+      >
+        <img src={infoIcon} alt="" className="button-icon" />
+      </button>
+      <div className="claim-ticket-logo-wrap">
+        <img src={bbcLogo} alt="Boiler Book Club logo" className="claim-ticket-logo" />
+      </div>
+      <p className={`eyebrow${showClaimQr ? " eyebrow--active rainbow-text" : ""}`}>
+        {showClaimQr ? "You're up!" : "You're in line"}
+      </p>
       <h2>Your number is</h2>
       <div className={`assigned-number${showClaimQr ? " rainbow-text" : ""}`}>
         {claimResult.number}
@@ -92,16 +113,7 @@ function ClaimResultCard({
         <button className="secondary-button" type="button" onClick={onOpenBookList}>
           Open Book Descriptions
         </button>
-        <button className="secondary-button" type="button" onClick={onToggleClaimNotifications}>
-          {notificationButtonLabel}
-        </button>
-        <button className="secondary-button" type="button" onClick={onOpenClaimRules}>
-          Info
-        </button>
       </div>
-      {claimNotificationMessage ? (
-        <p className="status-message status-message--info">{claimNotificationMessage}</p>
-      ) : null}
       <div className="claim-status-grid">
         <div className="stat-card">
           <span>Round</span>

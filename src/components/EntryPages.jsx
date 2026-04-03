@@ -1,3 +1,4 @@
+import bbcLogo from "../assets/bbc_logo.png";
 import { getEventTitleClassName } from "../titleFonts";
 
 function ControlAccessDenied({
@@ -58,7 +59,10 @@ function ClosedEventPage({
         </div>
       ) : null}
       <div className="entry-card">
-        <h2>Event Staff Login</h2>
+        <h2 className="entry-heading-with-logo">
+          <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+          <span>Event Staff Login</span>
+        </h2>
         {!loggedIn || !hasFullAccess ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
