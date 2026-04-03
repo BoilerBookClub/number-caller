@@ -73,6 +73,7 @@ function ClaimResultCard({
     : notificationPermission === "unsupported"
       ? "Notifications Unavailable"
       : "Notifications Off";
+  const isClaimActive = Boolean(showClaimQr && claimRecord);
 
   return (
     <div className={`entry-card assigned-card claim-modal-card${showClaimQr ? " claim-modal-card--active" : ""}`}>
@@ -109,6 +110,18 @@ function ClaimResultCard({
           ? "Come up and grab an item!"
           : "Your spot is saved. Watch the display screen to see when your number is called."}
       </p>
+      {isClaimActive ? (
+        <div className="claim-qr-inline-block">
+          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
+          <div className="claim-qr-box">
+            <QRCode value={claimQrPayload} size={180} />
+          </div>
+          <p>
+            Your turn is active for round {currentRound}. A staff member will scan this QR code
+            after you pick one item.
+          </p>
+        </div>
+      ) : null}
       <div className="claim-card-actions">
         <button className="secondary-button" type="button" onClick={onOpenBookList}>
           Open Book Descriptions
@@ -126,18 +139,7 @@ function ClaimResultCard({
       </div>
       <div className="claim-qr-panel">
         {claimRecord ? (
-          showClaimQr ? (
-            <>
-              <p className="eyebrow">Show This To Staff</p>
-              <div className="claim-qr-box">
-                <QRCode value={claimQrPayload} size={180} />
-              </div>
-              <p>
-                Your turn is active for round {currentRound}. A staff member will scan
-                this QR code after you pick one item.
-              </p>
-            </>
-          ) : hasClaimedCurrentRound ? (
+          showClaimQr ? null : hasClaimedCurrentRound ? (
             <p className="status-message status-message--success">
               You already claimed one item in round {currentRound}. Your QR code will
               return when the next round reaches your number again.

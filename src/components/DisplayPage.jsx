@@ -40,10 +40,10 @@ function DisplayPage({
             </div>
           ) : !liveState.finalCall ? (
             <>
-              <h1 className="number rainbow-text">
+              <h1 className="number">
                 {liveState.last + 1}-{liveState.current}
               </h1>
-                            <h2 style={{ color: "#7b5200" }}>may select an item now!</h2>
+              <h2 style={{ color: "#7b5200" }}>may select an item now!</h2>
             </>
           ) : (
             <>
