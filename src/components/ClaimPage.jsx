@@ -12,7 +12,7 @@ function ClaimResultCard({
 }) {
   return (
     <div className="entry-card assigned-card claim-modal-card">
-      <p className="eyebrow">{showClaimQr ? "You&apos;re up!" : "You&apos;re in line"}</p>
+      <p className="eyebrow">{showClaimQr ? "You're up!" : "You're in line"}</p>
       <h2>Your number is</h2>
       <div className={`assigned-number${showClaimQr ? " rainbow-text" : ""}`}>
         {claimResult.number}
@@ -90,7 +90,7 @@ function MemberClaimCard({
       <h1>{liveState.title}</h1>
       {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
       <h2>Claim Your Number</h2>
-      <p>Log in with Discord and we&apos;ll assign your number automatically.</p>
+      <p>Log in with Discord and we'll assign your number automatically.</p>
       {!loggedIn ? (
         <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
           {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}

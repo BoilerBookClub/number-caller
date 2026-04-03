@@ -227,6 +227,7 @@ function ControlPage({
     liveState.current > 0 &&
     activeQueueClaims.length > 0 &&
     activeQueueClaims.every((claim) => claim.redeemedRound === currentRound);
+  const isReadyForFinalCall = isLastGroup && isCurrentGroupFullyClaimed;
   const isFinalCallFullyClaimed =
     liveState.finalCall &&
     activeQueueClaims.length > 0 &&
@@ -305,7 +306,12 @@ function ControlPage({
                   </p>
                 )}
                 <div>
-                  <button onClick={onActivateFinalCall}>Final Call</button>
+                  <button
+                    className={isReadyForFinalCall ? "ready-button" : undefined}
+                    onClick={onActivateFinalCall}
+                  >
+                    Final Call
+                  </button>
                 </div>
               </>
             ) : (
