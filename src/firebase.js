@@ -8,6 +8,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import { createClaimQrToken } from "./claimQr";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -32,6 +33,9 @@ export const db = firebaseEnabled ? getFirestore(app) : null;
 const liveStateRef = firebaseEnabled
   ? doc(db, "events", "live-number-caller")
   : null;
+
+const getClaimRef = (claimId) =>
+  doc(db, "events", "live-number-caller", "claims", claimId);
 
 export const getModeFromUrl = () => {
   const params = new URLSearchParams(window.location.search);
@@ -66,6 +70,25 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
       }
 
       onEvent(snapshot.data());
+    },
+    onError,
+  );
+};
+
+export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
+  if (!firebaseEnabled || !claimId) {
+    return () => {};
+  }
+
+  return onSnapshot(
+    getClaimRef(claimId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onClaim(null);
+        return;
+      }
+
+      onClaim(snapshot.data());
     },
     onError,
   );
@@ -158,7 +181,7 @@ export const claimEventNumber = async ({
   }
 
   const claimId = `${eventId}__${encodeURIComponent(claimKey)}`;
-  const claimRef = doc(db, "events", "live-number-caller", "claims", claimId);
+  const claimRef = getClaimRef(claimId);
 
   return runTransaction(db, async (transaction) => {
     const liveEventSnapshot = await transaction.get(liveStateRef);
@@ -177,14 +200,26 @@ export const claimEventNumber = async ({
 
     if (existingClaimSnapshot.exists()) {
       const existingClaim = existingClaimSnapshot.data();
+      const qrToken = existingClaim.qrToken ?? createClaimQrToken();
+
+      if (!existingClaim.qrToken) {
+        transaction.update(claimRef, {
+          qrToken,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       return {
+        claimId,
         existing: true,
         number: existingClaim.number,
+        qrToken,
+        redeemedRound: existingClaim.redeemedRound ?? 0,
       };
     }
 
     const number = liveEvent.nextClaimNumber ?? 1;
+    const qrToken = createClaimQrToken();
 
     transaction.set(claimRef, {
       claimedAt: serverTimestamp(),
@@ -194,6 +229,9 @@ export const claimEventNumber = async ({
       eventId,
       number,
       participantType,
+      qrToken,
+      redeemedRound: 0,
+      updatedAt: serverTimestamp(),
     });
 
     transaction.update(liveStateRef, {
@@ -203,8 +241,73 @@ export const claimEventNumber = async ({
     });
 
     return {
+      claimId,
       existing: false,
       number,
+      qrToken,
+      redeemedRound: 0,
+    };
+  });
+};
+
+export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const claimRef = getClaimRef(claimId);
+
+  return runTransaction(db, async (transaction) => {
+    const [liveEventSnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(liveStateRef),
+      transaction.get(claimRef),
+    ]);
+
+    if (!liveEventSnapshot.exists()) {
+      throw new Error("The event is not open yet.");
+    }
+
+    if (!claimSnapshot.exists()) {
+      throw new Error("This claim could not be found.");
+    }
+
+    const liveEvent = liveEventSnapshot.data();
+    const claim = claimSnapshot.data();
+    const currentRound = liveEvent.state?.round ?? 1;
+    const currentNumber = liveEvent.state?.current ?? 0;
+
+    if (!liveEvent.active || liveEvent.eventId !== eventId) {
+      throw new Error("This QR code is for a different event.");
+    }
+
+    if (claim.eventId !== eventId || claim.qrToken !== qrToken) {
+      throw new Error("This QR code is no longer valid.");
+    }
+
+    if (currentNumber < claim.number) {
+      throw new Error("This number is not eligible yet.");
+    }
+
+    if ((claim.redeemedRound ?? 0) === currentRound) {
+      return {
+        alreadyRedeemed: true,
+        displayName: claim.displayName,
+        number: claim.number,
+        round: currentRound,
+      };
+    }
+
+    transaction.update(claimRef, {
+      redeemedAt: serverTimestamp(),
+      redeemedRound: currentRound,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      alreadyRedeemed: false,
+      displayName: claim.displayName,
+      number: claim.number,
+      round: currentRound,
     };
   });
 };

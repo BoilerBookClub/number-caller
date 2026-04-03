@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
+import QrScanner from "qr-scanner";
 import QRCode from "react-qr-code";
 import sound from "/sound.mp3";
 import "./App.css";
+import { buildClaimQrPayload, parseClaimQrPayload } from "./claimQr";
 import {
   claimEventNumber,
   closeLiveEvent,
@@ -11,6 +13,8 @@ import {
   getModeFromUrl,
   getScreenUrl,
   pushLiveState,
+  redeemClaimByQr,
+  subscribeToClaim,
   subscribeToLiveEvent,
   updateLiveEventDetails,
 } from "./firebase";
@@ -52,6 +56,22 @@ const normalizeLiveEvent = (nextEvent) => ({
   state: normalizeState(nextEvent?.state),
 });
 
+const normalizeClaimRecord = (claimId, nextClaim) => {
+  if (!nextClaim) {
+    return null;
+  }
+
+  return {
+    claimId,
+    displayName: "",
+    eventId: null,
+    number: 0,
+    qrToken: "",
+    redeemedRound: 0,
+    ...nextClaim,
+  };
+};
+
 const formatClockTime = (value) => {
   if (!value) {
     return "";
@@ -90,10 +110,17 @@ function App() {
   const [claimChoice, setClaimChoice] = useState(null);
   const [guestEmail, setGuestEmail] = useState("");
   const [claimResult, setClaimResult] = useState(null);
+  const [claimRecord, setClaimRecord] = useState(null);
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scannerActive, setScannerActive] = useState(false);
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
+  const scannerRef = useRef(null);
+  const scannerVideoRef = useRef(null);
+  const scanHandlerRef = useRef(null);
   const {
     authError,
     hasFullAccess,
@@ -115,6 +142,20 @@ function App() {
   const isCheckingAccess = authLoading || roleLoading;
   const isEventLive = liveEvent.active;
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
+  const currentRound = liveState.round;
+  const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
+  const hasReachedClaimNumber =
+    typeof claimRecord?.number === "number" && liveState.current >= claimRecord.number;
+  const claimQrPayload =
+    claimRecord?.claimId && claimRecord?.eventId && claimRecord?.qrToken
+      ? buildClaimQrPayload({
+          claimId: claimRecord.claimId,
+          eventId: claimRecord.eventId,
+          qrToken: claimRecord.qrToken,
+        })
+      : "";
+  const showClaimQr =
+    Boolean(claimQrPayload) && hasReachedClaimNumber && !hasClaimedCurrentRound;
 
   const changeMode = (nextMode) => {
     setMode(nextMode);
@@ -125,12 +166,14 @@ function App() {
     setClaimChoice(null);
     setGuestEmail("");
     setClaimResult(null);
+    setClaimRecord(null);
     setClaimError("");
     setClaimLoading(false);
   };
 
   const selectClaimChoice = (nextChoice) => {
     setClaimChoice(nextChoice);
+    setClaimRecord(null);
     setClaimError("");
     setClaimResult(null);
   };
@@ -199,6 +242,119 @@ function App() {
     previousEventIdRef.current = liveEvent.eventId;
     resetClaimFlow();
   }, [liveEvent.eventId]);
+
+  useEffect(() => {
+    if (!claimResult?.claimId) {
+      setClaimRecord(null);
+      return undefined;
+    }
+
+    return subscribeToClaim({
+      claimId: claimResult.claimId,
+      onClaim: (nextClaim) => {
+        setClaimRecord(normalizeClaimRecord(claimResult.claimId, nextClaim));
+      },
+      onError: (error) => {
+        console.error(error.message || "Unable to sync claim status.");
+      },
+    });
+  }, [claimResult?.claimId]);
+
+  useEffect(() => {
+    if (mode === "control" && isEventLive && hasFullAccess) {
+      return;
+    }
+
+    setScannerActive(false);
+  }, [hasFullAccess, isEventLive, mode]);
+
+  useEffect(() => {
+    scanHandlerRef.current = async (rawValue) => {
+      if (!rawValue || scanLoading) {
+        return;
+      }
+
+      const payload = parseClaimQrPayload(rawValue);
+
+      if (!payload) {
+        setScanFeedback({
+          tone: "error",
+          message: "That QR code is not a valid attendee claim code.",
+        });
+        return;
+      }
+
+      setScanLoading(true);
+
+      try {
+        const result = await redeemClaimByQr(payload);
+
+        setScanFeedback({
+          tone: result.alreadyRedeemed ? "info" : "success",
+          message: result.alreadyRedeemed
+            ? `Number ${result.number} already claimed an item in round ${result.round}.`
+            : `Marked number ${result.number} as claimed for round ${result.round}.`,
+        });
+      } catch (error) {
+        setScanFeedback({
+          tone: "error",
+          message: error.message || "Unable to mark that attendee as claimed.",
+        });
+      } finally {
+        setScanLoading(false);
+
+        if (scannerActive && scannerRef.current) {
+          scannerRef.current.start().catch((error) => {
+            setScanFeedback({
+              tone: "error",
+              message: error.message || "Unable to restart the camera scanner.",
+            });
+            setScannerActive(false);
+          });
+        }
+      }
+    };
+  }, [scanLoading, scannerActive]);
+
+  useEffect(() => {
+    if (!scannerActive || !scannerVideoRef.current || !hasFullAccess || !isEventLive) {
+      return undefined;
+    }
+
+    const scanner = new QrScanner(
+      scannerVideoRef.current,
+      (result) => {
+        scanner.stop();
+        void scanHandlerRef.current?.(
+          typeof result === "string" ? result : result?.data ?? "",
+        );
+      },
+      {
+        highlightCodeOutline: true,
+        highlightScanRegion: true,
+        maxScansPerSecond: 5,
+        preferredCamera: "environment",
+      },
+    );
+
+    scannerRef.current = scanner;
+
+    scanner.start().catch((error) => {
+      setScanFeedback({
+        tone: "error",
+        message: error.message || "Unable to start the camera scanner.",
+      });
+      setScannerActive(false);
+    });
+
+    return () => {
+      scanner.destroy();
+
+      if (scannerRef.current === scanner) {
+        scannerRef.current = null;
+      }
+    };
+  }, [hasFullAccess, isEventLive, scannerActive]);
 
   useEffect(() => {
     if (
@@ -492,7 +648,7 @@ function App() {
   );
 
   const renderClaimResult = () => (
-    <div className="entry-card assigned-card">
+    <div className="entry-card assigned-card claim-modal-card">
       <p className="eyebrow">You&apos;re in line</p>
       <h2>Your number is</h2>
       <div className="assigned-number">{claimResult.number}</div>
@@ -504,11 +660,42 @@ function App() {
       <button className="secondary-button" onClick={resetClaimFlow}>
         Back
       </button>
+      <div className="claim-qr-panel">
+        {claimRecord ? (
+          showClaimQr ? (
+            <>
+              <p className="eyebrow">Show This To Staff</p>
+              <div className="claim-qr-box">
+                <QRCode value={claimQrPayload} size={180} />
+              </div>
+              <p>
+                Your turn is active for round {currentRound}. A staff member will scan
+                this QR code after you pick one item.
+              </p>
+            </>
+          ) : hasClaimedCurrentRound ? (
+            <p className="status-message status-message--success">
+              You already claimed one item in round {currentRound}. Your QR code will
+              return when the next round reaches your number again.
+            </p>
+          ) : (
+            <p>
+              Your QR code will appear here once the display reaches number {claimRecord.number}
+              in round {currentRound}.
+            </p>
+          )
+        ) : (
+          <p>Syncing your claim status…</p>
+        )}
+      </div>
     </div>
   );
 
   const renderMemberClaimCard = () => (
-    <div className="entry-card">
+    <div className="entry-card claim-modal-card">
+      <p className="eyebrow">Live Event</p>
+      <h1>{liveState.title}</h1>
+      {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
       <h2>Discord Member Login</h2>
       <p>Log in with Discord and we&apos;ll assign your number automatically.</p>
       {!loggedIn ? (
@@ -531,7 +718,10 @@ function App() {
   );
 
   const renderGuestClaimCard = () => (
-    <form className="entry-card" onSubmit={handleGuestClaim}>
+    <form className="entry-card claim-modal-card" onSubmit={handleGuestClaim}>
+      <p className="eyebrow">Live Event</p>
+      <h1>{liveState.title}</h1>
+      {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
       <h2>Purdue Email</h2>
       <p>Enter your @purdue.edu email and we&apos;ll assign your number.</p>
       <label className="control-input-group">
@@ -553,26 +743,32 @@ function App() {
     </form>
   );
 
+  const isClaimFlowFocused = Boolean(claimChoice || claimResult);
+
   const renderClaimPage = () => (
-    <div className="claim-page">
-      <div className="entry-card hero-card">
-        <p className="eyebrow">Live Event</p>
-        <h1>{liveState.title}</h1>
-        {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-        <h2>Are you a member?</h2>
-        <div className="choice-row">
-          <button onClick={() => selectClaimChoice("member")}>Yes</button>
-          <button className="secondary-button" onClick={() => selectClaimChoice("guest")}>No</button>
+    <div className={`claim-page${isClaimFlowFocused ? " claim-page--focused" : ""}`}>
+      {!isClaimFlowFocused ? (
+        <div className="entry-card hero-card">
+          <p className="eyebrow">Live Event</p>
+          <h1>{liveState.title}</h1>
+          {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
+          <h2>Are you a member?</h2>
+          <div className="choice-row">
+            <button onClick={() => selectClaimChoice("member")}>Yes</button>
+            <button className="secondary-button" onClick={() => selectClaimChoice("guest")}>
+              No
+            </button>
+          </div>
+          {claimError && !claimChoice ? (
+            <p className="entry-message">{claimError}</p>
+          ) : null}
+          {loggedIn && hasFullAccess ? (
+            <button className="secondary-button" onClick={() => changeMode("control")}>
+              Open Control Panel
+            </button>
+          ) : null}
         </div>
-        {claimError && !claimChoice ? (
-          <p className="entry-message">{claimError}</p>
-        ) : null}
-        {loggedIn && hasFullAccess ? (
-          <button className="secondary-button" onClick={() => changeMode("control")}>
-            Open Control Panel
-          </button>
-        ) : null}
-      </div>
+      ) : null}
 
       {claimResult ? renderClaimResult() : null}
       {!claimResult && claimChoice === "member" ? renderMemberClaimCard() : null}
@@ -763,6 +959,39 @@ function App() {
                     : `${liveState.last + 1}-${liveState.current}`}
                 </strong>
               </div>
+            </div>
+
+            <div className="entry-card compact-card scanner-card">
+              <h2>Claim Scanner</h2>
+              <p>
+                Scan an attendee&apos;s QR code after they pick one item. Each number can be
+                marked once per round and resets automatically when a new round starts.
+              </p>
+              <div className="control-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanFeedback(null);
+                    setScannerActive((currentValue) => !currentValue);
+                  }}
+                  disabled={scanLoading}
+                >
+                  {scannerActive ? "Stop Scanner" : "Start Scanner"}
+                </button>
+              </div>
+              <div className="scanner-preview">
+                {scannerActive ? (
+                  <video ref={scannerVideoRef} className="scanner-video" muted playsInline />
+                ) : (
+                  <p>Start the scanner to use your camera.</p>
+                )}
+              </div>
+              {scanLoading ? <p>Processing scan…</p> : null}
+              {scanFeedback ? (
+                <p className={`status-message status-message--${scanFeedback.tone}`}>
+                  {scanFeedback.message}
+                </p>
+              ) : null}
             </div>
 
             <h2>Round {liveState.round}</h2>
