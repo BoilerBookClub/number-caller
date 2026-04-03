@@ -44,6 +44,16 @@ const claimsCollectionRef = firebaseEnabled
 const usersCollectionRef = firebaseEnabled ? collection(db, "users") : null;
 
 export const getModeFromUrl = () => {
+  const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+
+  if (normalizedPath === "/display") {
+    return "display";
+  }
+
+  if (normalizedPath === "/control") {
+    return "control";
+  }
+
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("mode");
 
@@ -53,10 +63,11 @@ export const getModeFromUrl = () => {
 export const getScreenUrl = (mode) => {
   const url = new URL(window.location.href);
 
+  url.pathname = mode ? `/${mode}` : "/";
+  url.searchParams.delete("mode");
+
   if (mode) {
-    url.searchParams.set("mode", mode);
-  } else {
-    url.searchParams.delete("mode");
+    url.searchParams.delete("claim");
   }
 
   return url.toString();

@@ -6,6 +6,10 @@
   text-align: center;
 }
 
+#root:has(.display) {
+  max-width: 78rem;
+}
+
 .mode-select,
 .control,
 .display,
@@ -557,6 +561,17 @@ button:disabled {
   color: #111111;
 }
 
+.danger-button {
+  background: #c62828;
+  border: 1px solid #9f1f1f;
+  color: #ffffff;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #b71c1c;
+  border-color: #8e1717;
+}
+
 .assigned-number {
   font-size: clamp(4rem, 14vw, 7rem);
   font-weight: 900;
@@ -633,12 +648,18 @@ button:disabled {
 .display-content-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 2rem;
 }
 
 .display-main {
   flex: 1 1 auto;
+}
+
+.display-claim-qr-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 2.5rem;
 }
 
 li {
@@ -651,12 +672,12 @@ li {
   gap: 1.5rem;
   flex: 0 0 auto;
   justify-self: center;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: center;
+  align-items: center;
   margin-top: 0;
   padding: 10px 10px 10px 10px;
   border-radius: 24px;
-  max-width: 900px;
+  width: min(100%, 34rem);
   border: #7d7d7d 1.5px solid;
   box-shadow: #34343441 0 0 10px 1px;
 }
@@ -683,9 +704,18 @@ li {
   padding-top: 0;
 }
 
+.qr-claim-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 0.5rem;
+  max-width: 15rem;
+}
+
 .qr-caption {
   max-width: 200px;
-  text-align: center;
+  text-align: left;
   line-height: 90%;
   margin: 0;
   font-size: 1.3rem;
@@ -693,7 +723,7 @@ li {
 
 .qr-helper-text {
   max-width: 200px;
-  margin: 0.5rem 0 0;
+  margin: 0;
   font-size: 0.95rem;
   color: #5a5a5a;
 }
@@ -738,6 +768,18 @@ li {
   .rules-qr-container {
     flex-direction: column;
     align-items: center;
+    width: min(100%, 24rem);
+  }
+
+  .qr-claim-copy {
+    align-items: center;
+    text-align: center;
+    max-width: 100%;
+  }
+
+  .qr-caption,
+  .qr-helper-text {
+    text-align: center;
   }
 
   .rules-qr-container ol {
