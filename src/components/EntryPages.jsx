@@ -40,6 +40,7 @@ function ControlAccessDenied({
 
 function ClosedEventPage({
   authError,
+  endedEventTitle,
   hasFullAccess,
   isCheckingAccess,
   loggedIn,
@@ -48,6 +49,12 @@ function ClosedEventPage({
 }) {
   return (
     <div className="entry-screen">
+      {endedEventTitle ? (
+        <div className="entry-card hero-card">
+          <p className="eyebrow">Event Complete</p>
+          <h1>Thanks for coming to {endedEventTitle}!!!</h1>
+        </div>
+      ) : null}
       <div className="entry-card">
         <h2>Staff Login</h2>
         <p>Log in with Discord to open the control panel and start the event.</p>

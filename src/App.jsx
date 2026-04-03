@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import QrScanner from "qr-scanner";
 import sound from "/sound.mp3";
@@ -249,6 +249,7 @@ const buildClaimAccessUrl = (accessCode) => {
 function App() {
   const [mode, setMode] = useState(() => getModeFromUrl());
   const [liveEvent, setLiveEvent] = useState(() => normalizeLiveEvent(null));
+  const [endedEventTitle, setEndedEventTitle] = useState("");
   const [isHydrated, setIsHydrated] = useState(!firebaseEnabled);
   const [controlForm, setControlForm] = useState(initialControlForm);
   const [controlMessage, setControlMessage] = useState("");
@@ -285,6 +286,8 @@ function App() {
   } = useDiscordLogin();
 
   const dingSound = useRef(new Audio(sound));
+  const previousIsEventLiveRef = useRef(initialState.active ?? false);
+  const previousLiveEventTitleRef = useRef(initialState.title);
   const liveState = liveEvent.state;
   const { current, finalCall: isFinalCall } = liveState;
   const displayUrl = getScreenUrl("display");
@@ -323,6 +326,7 @@ function App() {
       ? buildClaimId(liveEvent.eventId, attendeeClaimKey)
       : claimResult?.claimId ?? "";
   const effectiveClaimResult = claimResult ?? buildClaimResultFromRecord(claimRecord);
+  const hadAttendeeClaim = Boolean(effectiveClaimResult);
   const attendeeClaimNumber = claimRecord?.number ?? claimResult?.number ?? null;
   const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
   const hasReachedClaimNumber =
@@ -385,11 +389,11 @@ function App() {
     window.open(qrCodeValue, "_blank", "noopener,noreferrer");
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     clearClaimAccessGrant();
     clearConfirmedClaimAccess();
     logout();
-  };
+  }, [logout]);
 
   const resetClaimFlow = () => {
     setClaimResult(null);
@@ -506,6 +510,30 @@ function App() {
     previousEventIdRef.current = liveEvent.eventId;
     resetClaimFlow();
   }, [liveEvent.eventId]);
+
+  useEffect(() => {
+    if (isEventLive) {
+      previousLiveEventTitleRef.current = liveState.title?.trim() || initialState.title;
+    }
+
+    const wasEventLive = previousIsEventLiveRef.current;
+
+    if (isEventLive) {
+      setEndedEventTitle("");
+    } else if (wasEventLive && mode !== "control") {
+      const completedEventTitle = previousLiveEventTitleRef.current;
+
+      if (hadAttendeeClaim) {
+        setEndedEventTitle(completedEventTitle);
+      }
+
+      if (loggedIn) {
+        handleLogout();
+      }
+    }
+
+    previousIsEventLiveRef.current = isEventLive;
+  }, [hadAttendeeClaim, handleLogout, isEventLive, liveState.title, loggedIn, mode]);
 
   useEffect(() => {
     if (!attendeeClaimId) {
@@ -1062,6 +1090,7 @@ function App() {
     return (
       <ClosedEventPage
         authError={authError}
+        endedEventTitle={mode === null ? endedEventTitle : ""}
         hasFullAccess={hasFullAccess}
         isCheckingAccess={isCheckingAccess}
         loggedIn={loggedIn}
