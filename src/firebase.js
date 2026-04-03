@@ -35,6 +35,9 @@ const liveStateRef = firebaseEnabled
   ? doc(db, "events", "live-number-caller")
   : null;
 
+export const buildClaimId = (eventId, claimKey) =>
+  `${eventId}__${encodeURIComponent(claimKey)}`;
+
 const getClaimRef = (claimId) =>
   doc(db, "events", "live-number-caller", "claims", claimId);
 
@@ -239,7 +242,7 @@ export const claimEventNumber = async ({
     throw new Error("Firebase is not configured.");
   }
 
-  const claimId = `${eventId}__${encodeURIComponent(claimKey)}`;
+  const claimId = buildClaimId(eventId, claimKey);
   const claimRef = getClaimRef(claimId);
 
   return runTransaction(db, async (transaction) => {

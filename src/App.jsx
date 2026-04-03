@@ -21,6 +21,7 @@ import { buildClaimQrPayload, parseClaimQrPayload } from "./claimQr";
 import {
   claimEventNumber,
   closeLiveEvent,
+  buildClaimId,
   createLiveEvent,
   firebaseEnabled,
   getModeFromUrl,
@@ -86,6 +87,22 @@ const normalizeClaimRecord = (claimId, nextClaim) => {
     qrToken: "",
     redeemedRound: 0,
     ...nextClaim,
+  };
+};
+
+const buildClaimResultFromRecord = (claimRecord) => {
+  if (!claimRecord) {
+    return null;
+  }
+
+  return {
+    claimId: claimRecord.claimId,
+    existing: true,
+    isMember: claimRecord.isMember ?? false,
+    itemsClaimedCount: claimRecord.itemsClaimedCount ?? 0,
+    number: claimRecord.number ?? 0,
+    qrToken: claimRecord.qrToken ?? "",
+    redeemedRound: claimRecord.redeemedRound ?? 0,
   };
 };
 
@@ -300,6 +317,12 @@ function App() {
   const rotatingClaimAccessUrl = rotatingClaimAccessCode
     ? buildClaimAccessUrl(rotatingClaimAccessCode)
     : "";
+  const attendeeClaimKey = loggedIn && user ? `discord:${user}` : "";
+  const attendeeClaimId =
+    liveEvent.eventId && attendeeClaimKey
+      ? buildClaimId(liveEvent.eventId, attendeeClaimKey)
+      : claimResult?.claimId ?? "";
+  const effectiveClaimResult = claimResult ?? buildClaimResultFromRecord(claimRecord);
   const attendeeClaimNumber = claimRecord?.number ?? claimResult?.number ?? null;
   const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
   const hasReachedClaimNumber =
@@ -485,21 +508,43 @@ function App() {
   }, [liveEvent.eventId]);
 
   useEffect(() => {
-    if (!claimResult?.claimId) {
+    if (!attendeeClaimId) {
       setClaimRecord(null);
       return undefined;
     }
 
     return subscribeToClaim({
-      claimId: claimResult.claimId,
+      claimId: attendeeClaimId,
       onClaim: (nextClaim) => {
-        setClaimRecord(normalizeClaimRecord(claimResult.claimId, nextClaim));
+        const nextClaimRecord = normalizeClaimRecord(attendeeClaimId, nextClaim);
+
+        setClaimRecord(nextClaimRecord);
+        setClaimResult((currentResult) => {
+          if (!nextClaimRecord) {
+            return currentResult?.claimId === attendeeClaimId ? null : currentResult;
+          }
+
+          const nextClaimResult = buildClaimResultFromRecord(nextClaimRecord);
+
+          if (
+            currentResult?.claimId === nextClaimResult.claimId &&
+            currentResult.number === nextClaimResult.number &&
+            currentResult.qrToken === nextClaimResult.qrToken &&
+            currentResult.redeemedRound === nextClaimResult.redeemedRound &&
+            currentResult.itemsClaimedCount === nextClaimResult.itemsClaimedCount &&
+            currentResult.isMember === nextClaimResult.isMember
+          ) {
+            return currentResult;
+          }
+
+          return nextClaimResult;
+        });
       },
       onError: (error) => {
         console.error(error.message || "Unable to sync claim status.");
       },
     });
-  }, [claimResult?.claimId]);
+  }, [attendeeClaimId]);
 
   useEffect(() => {
     if (!loggedIn || !claimAccessGranted || !liveEvent.eventId) {
@@ -563,6 +608,7 @@ function App() {
         : "Scan the in-person event QR code to claim a number.",
     );
   }, [
+    claimAccessCode,
     currentTime,
     isEventLive,
     liveEvent.claimAccessSecret,
@@ -728,7 +774,7 @@ function App() {
       isCheckingAccess ||
       !isClaimWindowOpen ||
       claimLoading ||
-      claimResult
+      effectiveClaimResult
     ) {
       return;
     }
@@ -759,7 +805,7 @@ function App() {
   }, [
     claimLoading,
     claimAccessGranted,
-    claimResult,
+    effectiveClaimResult,
     isClaimWindowOpen,
     isCheckingAccess,
     isEventLive,
@@ -1025,7 +1071,7 @@ function App() {
     );
   }
 
-  if (!claimAccessGranted && !claimResult) {
+  if (!claimAccessGranted && !effectiveClaimResult) {
     return (
       <ClaimAccessGatePage
         authError={authError}
@@ -1047,7 +1093,7 @@ function App() {
       claimLoading={claimLoading}
       claimQrPayload={claimQrPayload}
       claimRecord={claimRecord}
-      claimResult={claimResult}
+      claimResult={effectiveClaimResult}
       currentRound={currentRound}
       eventStartLabel={eventStartLabel}
       hasClaimedCurrentRound={hasClaimedCurrentRound}
