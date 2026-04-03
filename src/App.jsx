@@ -4,6 +4,12 @@ import QrScanner from "qr-scanner";
 import QRCode from "react-qr-code";
 import sound from "/sound.mp3";
 import "./App.css";
+import {
+  buildClaimAccessCode,
+  CLAIM_ACCESS_GRANT_MS,
+  createClaimAccessSecret,
+  isValidClaimAccessCode,
+} from "./claimAccess";
 import { buildClaimQrPayload, parseClaimQrPayload } from "./claimQr";
 import {
   claimEventNumber,
@@ -15,6 +21,7 @@ import {
   pushLiveState,
   redeemClaimByQr,
   subscribeToClaim,
+  subscribeToClaims,
   subscribeToLiveEvent,
   updateLiveEventDetails,
 } from "./firebase";
@@ -30,6 +37,7 @@ const initialState = {
   last: 0,
   round: 1,
   finalCall: false,
+  finalCallTargetClaimIds: [],
 };
 
 const initialControlForm = {
@@ -47,6 +55,7 @@ const normalizeState = (nextState) => ({
 const normalizeLiveEvent = (nextEvent) => ({
   active: false,
   claimCount: 0,
+  claimAccessSecret: "",
   eventId: null,
   nextClaimNumber: 1,
   timeframeEnd: "",
@@ -71,6 +80,16 @@ const normalizeClaimRecord = (claimId, nextClaim) => {
     ...nextClaim,
   };
 };
+
+const normalizeRosterClaim = (nextClaim) => ({
+  claimId: nextClaim.claimId,
+  displayName: nextClaim.displayName || nextClaim.discordUserId || "Unknown attendee",
+  eventId: nextClaim.eventId ?? null,
+  isMember: nextClaim.isMember ?? false,
+  itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
+  number: nextClaim.number ?? 0,
+  participantType: nextClaim.participantType ?? "discord",
+});
 
 const formatClockTime = (value) => {
   if (!value) {
@@ -116,6 +135,50 @@ const getTodayTime = (value) => {
 const buildEventId = () =>
   globalThis.crypto?.randomUUID?.() ?? `event-${Date.now()}`;
 
+const CLAIM_ACCESS_GRANT_KEY = "number-caller-claim-access-grant";
+
+const readClaimAccessGrant = () => {
+  const rawGrant = window.sessionStorage.getItem(CLAIM_ACCESS_GRANT_KEY);
+
+  if (!rawGrant) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawGrant);
+  } catch {
+    window.sessionStorage.removeItem(CLAIM_ACCESS_GRANT_KEY);
+    return null;
+  }
+};
+
+const writeClaimAccessGrant = (grant) => {
+  window.sessionStorage.setItem(CLAIM_ACCESS_GRANT_KEY, JSON.stringify(grant));
+};
+
+const clearClaimAccessGrant = () => {
+  window.sessionStorage.removeItem(CLAIM_ACCESS_GRANT_KEY);
+};
+
+const getClaimAccessCodeFromUrl = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("claim")?.trim() ?? "";
+};
+
+const buildClaimAccessUrl = (accessCode) => {
+  const url = new URL(window.location.href);
+
+  url.searchParams.delete("mode");
+
+  if (accessCode) {
+    url.searchParams.set("claim", accessCode);
+  } else {
+    url.searchParams.delete("claim");
+  }
+
+  return url.toString();
+};
+
 function App() {
   const [mode, setMode] = useState(() => getModeFromUrl());
   const [liveEvent, setLiveEvent] = useState(() => normalizeLiveEvent(null));
@@ -125,11 +188,15 @@ function App() {
   const [controlSaving, setControlSaving] = useState(false);
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
+  const [claimRoster, setClaimRoster] = useState([]);
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
+  const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState(false);
+  const [claimAccessGranted, setClaimAccessGranted] = useState(false);
+  const [claimAccessStatus, setClaimAccessStatus] = useState("");
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
@@ -146,6 +213,7 @@ function App() {
     roleLoading,
     startOAuthGrant,
     user,
+    username,
   } = useDiscordLogin();
 
   const dingSound = useRef(new Audio(sound));
@@ -173,6 +241,13 @@ function App() {
   const memberEarlyAccessLabel = memberEarlyAccessTime
     ? formatClockTime(memberEarlyAccessTime.toTimeString().slice(0, 5))
     : eventStartLabel;
+  const rotatingClaimAccessCode = buildClaimAccessCode(
+    liveEvent.claimAccessSecret,
+    currentTime,
+  );
+  const rotatingClaimAccessUrl = rotatingClaimAccessCode
+    ? buildClaimAccessUrl(rotatingClaimAccessCode)
+    : "";
   const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
   const hasReachedClaimNumber =
     typeof claimRecord?.number === "number" && liveState.current >= claimRecord.number;
@@ -186,10 +261,42 @@ function App() {
       : "";
   const showClaimQr =
     Boolean(claimQrPayload) && hasReachedClaimNumber && !hasClaimedCurrentRound;
+  const currentEventClaims = claimRoster
+    .filter((claim) => claim.eventId === liveEvent.eventId)
+    .sort((leftClaim, rightClaim) => leftClaim.number - rightClaim.number);
+  const totalPeopleWithNumbers = currentEventClaims.length;
+  const currentGroupClaims = currentEventClaims.filter(
+    (claim) => claim.number > liveState.last && claim.number <= liveState.current,
+  );
+  const finalCallTargetClaims = (liveState.finalCallTargetClaimIds ?? [])
+    .map((claimId) =>
+      currentEventClaims.find((claim) => claim.claimId === claimId) ?? null,
+    )
+    .filter(Boolean);
+  const activeQueueClaims = liveState.finalCall ? finalCallTargetClaims : currentGroupClaims;
+  const activeQueueClaimedCount = activeQueueClaims.filter(
+    (claim) => claim.redeemedRound === currentRound,
+  ).length;
+  const isLastGroup =
+    !liveState.finalCall && liveState.current > 0 && liveState.current >= totalPeopleWithNumbers;
+  const queueTitle = liveState.finalCall ? "Final Call" : "Current Group";
+  const queueDescription = liveState.finalCall
+    ? `Showing everyone who had not claimed an item before final call started for round ${currentRound}.`
+    : liveState.current === 0
+      ? "Call the first group to start item pickup."
+      : `Tracking attendees in numbers ${liveState.last + 1}-${liveState.current}.`;
 
   const changeMode = (nextMode) => {
     setMode(nextMode);
     window.history.replaceState({}, document.title, getScreenUrl(nextMode));
+  };
+
+  const openDisplayScreen = () => {
+    window.open(displayUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const openBookList = () => {
+    window.open(qrCodeValue, "_blank", "noopener,noreferrer");
   };
 
   const resetClaimFlow = () => {
@@ -197,6 +304,14 @@ function App() {
     setClaimRecord(null);
     setClaimError("");
     setClaimLoading(false);
+  };
+
+  const closeEventDetailsModal = () => {
+    if (!isEventLive) {
+      return;
+    }
+
+    setIsEventDetailsModalOpen(false);
   };
 
   useEffect(() => {
@@ -290,6 +405,64 @@ function App() {
       },
     });
   }, [claimResult?.claimId]);
+
+  useEffect(() => {
+    if (!isEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
+      setClaimAccessGranted(false);
+      setClaimAccessStatus("");
+      clearClaimAccessGrant();
+      return;
+    }
+
+    const claimAccessCode = getClaimAccessCodeFromUrl();
+    const storedGrant = readClaimAccessGrant();
+    const hasStoredGrant =
+      storedGrant?.eventId === liveEvent.eventId && storedGrant?.expiresAt > currentTime;
+    const hasFreshCode = isValidClaimAccessCode(
+      liveEvent.claimAccessSecret,
+      claimAccessCode,
+      currentTime,
+    );
+
+    if (hasFreshCode) {
+      writeClaimAccessGrant({
+        eventId: liveEvent.eventId,
+        expiresAt: currentTime + CLAIM_ACCESS_GRANT_MS,
+      });
+      setClaimAccessGranted(true);
+      setClaimAccessStatus("");
+      return;
+    }
+
+    if (hasStoredGrant) {
+      setClaimAccessGranted(true);
+      setClaimAccessStatus("");
+      return;
+    }
+
+    setClaimAccessGranted(false);
+    setClaimAccessStatus(
+      claimAccessCode
+        ? "That attendee QR code expired. Scan the current event QR code to claim a number."
+        : "Scan the in-person event QR code to claim a number.",
+    );
+  }, [currentTime, isEventLive, liveEvent.claimAccessSecret, liveEvent.eventId]);
+
+  useEffect(() => {
+    if (!isEventLive) {
+      setClaimRoster([]);
+      return undefined;
+    }
+
+    return subscribeToClaims({
+      onClaims: (nextClaims) => {
+        setClaimRoster(nextClaims.map(normalizeRosterClaim));
+      },
+      onError: (error) => {
+        console.error(error.message || "Unable to sync attendee claims.");
+      },
+    });
+  }, [isEventLive]);
 
   useEffect(() => {
     if (mode === "control" && isEventLive && hasFullAccess) {
@@ -404,6 +577,7 @@ function App() {
   useEffect(() => {
     if (
       !isEventLive ||
+      !claimAccessGranted ||
       !loggedIn ||
       isCheckingAccess ||
       !isClaimWindowOpen ||
@@ -420,8 +594,9 @@ function App() {
         const result = await claimEventNumber({
           claimKey: `discord:${user}`,
           discordUserId: user,
-          displayName: user,
+          displayName: username || user,
           eventId: liveEvent.eventId,
+          isMember,
           participantType: "discord",
         });
 
@@ -437,13 +612,16 @@ function App() {
     void assignDiscordNumber();
   }, [
     claimLoading,
+    claimAccessGranted,
     claimResult,
     isClaimWindowOpen,
     isCheckingAccess,
     isEventLive,
+    isMember,
     liveEvent.eventId,
     loggedIn,
     user,
+    username,
   ]);
 
   const persistState = async (newState) => {
@@ -470,6 +648,7 @@ function App() {
       ...liveState,
       current: liveState.current + amount,
       finalCall: false,
+      finalCallTargetClaimIds: [],
       last: liveState.current,
     });
   };
@@ -479,13 +658,20 @@ function App() {
       ...liveState,
       current: 0,
       finalCall: false,
+      finalCallTargetClaimIds: [],
       last: 0,
       round: liveState.round + 1,
     });
   };
 
   const activateFinalCall = () => {
-    persistState({ ...liveState, finalCall: true });
+    persistState({
+      ...liveState,
+      finalCall: true,
+      finalCallTargetClaimIds: currentEventClaims
+        .filter((claim) => claim.redeemedRound !== currentRound)
+        .map((claim) => claim.claimId),
+    });
   };
 
   const handleControlFieldChange = (field) => (event) => {
@@ -527,6 +713,7 @@ function App() {
 
     try {
       await createLiveEvent({
+        claimAccessSecret: createClaimAccessSecret(),
         eventId: buildEventId(),
         state: buildEventStateFromForm(),
         timeframeEnd: controlForm.timeframeEnd,
@@ -537,6 +724,7 @@ function App() {
         timeframeStart: controlForm.timeframeStart,
       });
       setControlMessage("Event started.");
+      setIsEventDetailsModalOpen(false);
     } catch (error) {
       setControlMessage(error.message || "Unable to start the event.");
     } finally {
@@ -566,6 +754,7 @@ function App() {
         timeframeStart: controlForm.timeframeStart,
       });
       setControlMessage("Event details saved.");
+      setIsEventDetailsModalOpen(false);
     } catch (error) {
       setControlMessage(error.message || "Unable to save event details.");
     } finally {
@@ -620,13 +809,6 @@ function App() {
   const renderClosedEventPage = () => (
     <div className="entry-screen">
       <div className="entry-card">
-        <h1>The event isn&apos;t open yet.</h1>
-        <p>Check back during the event window to claim your number.</p>
-        {!firebaseEnabled ? (
-          <p className="entry-message">Firebase is not configured for this build.</p>
-        ) : null}
-      </div>
-      <div className="entry-card">
         <h2>Staff Login</h2>
         <p>Log in with Discord to open the control panel and start the event.</p>
         {!loggedIn || !hasFullAccess ? (
@@ -651,7 +833,9 @@ function App() {
     <div className="entry-card assigned-card claim-modal-card">
       <p className="eyebrow">You&apos;re in line</p>
       <h2>Your number is</h2>
-      <div className="assigned-number">{claimResult.number}</div>
+      <div className={`assigned-number${showClaimQr ? " rainbow-text" : ""}`}>
+        {claimResult.number}
+      </div>
       <p>
         {claimResult.existing
           ? "You already claimed a number for this event."
@@ -659,6 +843,9 @@ function App() {
       </p>
       <button className="secondary-button" onClick={resetClaimFlow}>
         Back
+      </button>
+      <button className="secondary-button" onClick={openBookList}>
+        Open Book Descriptions
       </button>
       <div className="claim-status-grid">
         <div className="stat-card">
@@ -747,6 +934,31 @@ function App() {
     </div>
   );
 
+  const renderClaimAccessGatePage = () => (
+    <div className="entry-screen">
+      <div className="entry-card hero-card">
+        <p className="eyebrow">Live Event</p>
+        <h1>{liveState.title}</h1>
+        {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
+        <h2>Staff Login</h2>
+        <p>
+          Attendees must scan the in-person event QR code before they can log in and
+          claim a number.
+        </p>
+        {!loggedIn || !hasFullAccess ? (
+          <button onClick={startOAuthGrant} disabled={isCheckingAccess}>
+            {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
+          </button>
+        ) : null}
+        {loggedIn && hasFullAccess && !isCheckingAccess ? (
+          <button onClick={() => changeMode("control")}>Open Control Panel</button>
+        ) : null}
+        {claimAccessStatus ? <p className="entry-message">{claimAccessStatus}</p> : null}
+        {authError ? <p className="entry-message">{authError}</p> : null}
+      </div>
+    </div>
+  );
+
   const renderDisplayPage = () => {
     if (!isEventLive) {
       return (
@@ -762,87 +974,65 @@ function App() {
         <h1>Goodie Selection ROUND {liveState.round}</h1>
         <h1 className="carnival">{liveState.title}</h1>
 
-        {liveState.current === 0 && !liveState.finalCall ? (
-          <div className="final-call">
-            <h1 className="rainbow-text">Starting Soon</h1>
+        <div className="display-content-row">
+          <div className="display-main">
+            {liveState.current === 0 && !liveState.finalCall ? (
+              <div className="final-call">
+                <h1 className="rainbow-text">Starting Soon</h1>
+              </div>
+            ) : !liveState.finalCall ? (
+              <>
+                <h1>Numbers</h1>
+                <h1 className="number rainbow-text">
+                  {liveState.last + 1}-{liveState.current}
+                </h1>
+                <h1>may select an item now!</h1>
+              </>
+            ) : (
+              <>
+                <div className="final-call">
+                  <h1 className="rainbow-text">FINAL CALL</h1>
+                </div>
+                <h2>If you have NOT gotten an item yet, please come forward</h2>
+              </>
+            )}
           </div>
-        ) : !liveState.finalCall ? (
-          <>
-            <h1>Numbers</h1>
-            <h1 className="number rainbow-text">
-              {liveState.last + 1}-{liveState.current}
-            </h1>
-            <h1>may select an item now! (OR IF YOU DON&apos;T HAVE AN ITEM YET)</h1>
-          </>
-        ) : (
-          <>
-            <div className="final-call">
-              <h1 className="rainbow-text">FINAL CALL</h1>
-            </div>
-            <h2>If you have NOT gotten an item yet, please come forward</h2>
-          </>
-        )}
 
-        <div className="rules-qr-container">
-          <ol>
-            <h1 className="rules-heading">
-              <u>IMPORTANT RULES</u>
-            </h1>
-            <li>When your number is called, select either ONE Book or ONE Succulent</li>
-            <li>You will receive a stamp on your number AFTER you have selected your item.</li>
-            <li>
-              Keep this paper. After all numbers have been called, the process will
-              restart and you&apos;ll get a chance to select another item. There is NO
-              guarantee particular items will be available, everything is first come
-              first serve.
-            </li>
-          </ol>
-
-          <div className="qr-code">
-            <QRCode value={qrCodeValue} size={160} />
-            <h2 className="qr-caption">Scan to See Book Descriptions!</h2>
+          <div className="rules-qr-container">
+            {rotatingClaimAccessUrl ? (
+              <div className="qr-code qr-code--claim">
+                <QRCode value={rotatingClaimAccessUrl} size={160} />
+                <h2 className="qr-caption">Scan to Claim Your Number</h2>
+                <p className="qr-helper-text">This attendee QR refreshes every minute.</p>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
     );
   };
 
-  const renderControlPage = () => {
-    if (isCheckingAccess) {
-      return (
-        <div className="mode-select">
-          <h2>Checking Discord access…</h2>
-        </div>
-      );
-    }
-
-    if (!hasFullAccess) {
-      return renderControlAccessDenied();
-    }
-
-    return (
-      <div className="control">
-        <div className="control-toolbar">
-          <button className="secondary-button" onClick={() => changeMode(null)}>
-            Main Page
-          </button>
-          <button className="secondary-button" onClick={logout}>
-            Logout
-          </button>
-        </div>
-        <h1>Control Panel</h1>
-        <div className="link-card-row link-card-row--single">
-          <div className="link-card">
-            <p>Display screen</p>
-            <a href={displayUrl} target="_blank" rel="noreferrer">
-              {displayUrl}
-            </a>
+  const renderEventDetailsModal = () => (
+    <div className="event-modal-backdrop" role="presentation">
+      <div className="event-modal" role="dialog" aria-modal="true" aria-label="Event details">
+        {isEventLive ? (
+          <div className="event-modal-header">
+            <button
+              type="button"
+              className="event-modal-close"
+              onClick={closeEventDetailsModal}
+              aria-label="Close event details"
+            >
+              ×
+            </button>
           </div>
-        </div>
-
-        <div className="entry-card control-settings-card">
-          <h2>Event Settings</h2>
-          <form className="control-form" onSubmit={isEventLive ? handleSaveEventDetails : handleStartEvent}>
+        ) : null}
+        <div className="event-modal-content">
+          <h2>{isEventLive ? "Edit Event Details" : "Create Event"}</h2>
+          <form
+            className="control-form"
+            onSubmit={isEventLive ? handleSaveEventDetails : handleStartEvent}
+          >
             <label className="control-input-group control-input-group--centered">
               <span>Event Title</span>
               <input
@@ -853,7 +1043,7 @@ function App() {
               />
             </label>
             <label className="control-input-group control-input-group--centered">
-              <span>QR Code URL</span>
+              <span>Book List URL</span>
               <input
                 type="url"
                 value={controlForm.qrUrl}
@@ -888,30 +1078,59 @@ function App() {
                     ? "Save Event Details"
                     : "Start Event"}
               </button>
-              {isEventLive ? (
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={handleCloseEvent}
-                  disabled={controlSaving}
-                >
-                  End Event
-                </button>
-              ) : null}
             </div>
           </form>
         </div>
+      </div>
+    </div>
+  );
 
+  const renderControlPage = () => {
+    if (isCheckingAccess) {
+      return (
+        <div className="mode-select">
+          <h2>Checking Discord access…</h2>
+        </div>
+      );
+    }
+
+    if (!hasFullAccess) {
+      return renderControlAccessDenied();
+    }
+
+    return (
+      <div className="control">
+        {!isEventLive ? renderEventDetailsModal() : null}
         {isEventLive ? (
           <>
-            <div className="stats-grid">
-              <div className="stat-card">
-                <span>Timeframe</span>
-                <strong>{liveEvent.timeframeLabel}</strong>
+            <div className={`control-dashboard${isEventDetailsModalOpen ? " control-dashboard--blurred" : ""}`}>
+              <div className="control-event-header">
+                <h1>{liveState.title}</h1>
+                <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
+                <p className="control-event-subtitle control-event-link">{liveState.qrUrl}</p>
+                <div className="control-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setIsEventDetailsModalOpen(true)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={handleCloseEvent}
+                    disabled={controlSaving}
+                  >
+                    End Event
+                  </button>
+                </div>
               </div>
+
+              <div className="stats-grid">
               <div className="stat-card">
-                <span>Numbers Claimed</span>
-                <strong>{liveEvent.claimCount}</strong>
+                <span>Round</span>
+                <strong>{liveState.round}</strong>
               </div>
               <div className="stat-card">
                 <span>Currently Calling</span>
@@ -921,42 +1140,27 @@ function App() {
                     : `${liveState.last + 1}-${liveState.current}`}
                 </strong>
               </div>
-            </div>
-
-            <div className="entry-card compact-card scanner-card">
-              <h2>Claim Scanner</h2>
-              <p>
-                Scan an attendee&apos;s QR code after they pick one item. Each number can be
-                marked once per round and resets automatically when a new round starts.
-              </p>
-              <div className="control-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setScanFeedback(null);
-                    setScannerActive(true);
-                  }}
-                  disabled={scanLoading}
-                >
-                  Open Scanner
-                </button>
+              <div className="stat-card">
+                <span>Attendees</span>
+                <strong>{totalPeopleWithNumbers}</strong>
               </div>
-              <p className="scanner-helper-text">
-                The camera only opens after you launch the fullscreen scanner.
-              </p>
-            </div>
+              </div>
 
-            <h2>Round {liveState.round}</h2>
-            <h3>
-              Current: {liveState.last + 1}–{liveState.current}
-            </h3>
-            {!liveState.finalCall ? (
+              {!liveState.finalCall ? (
               <>
-                <div>
-                  <button onClick={() => increment(5)}>+5</button>
-                  <button onClick={() => increment(10)}>+10</button>
-                  <button onClick={() => increment(20)}>+20</button>
-                </div>
+                {!isLastGroup ? (
+                  <div>
+                    <button onClick={() => increment(10)}>
+                      {liveState.round === 1 && liveState.current === 0
+                        ? "Start Round 1"
+                        : "Next Group"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="entry-message">
+                    This is the last group. Use Final Call when you&apos;re ready.
+                  </p>
+                )}
                 <div>
                   <button onClick={activateFinalCall}>Final Call</button>
                 </div>
@@ -966,13 +1170,87 @@ function App() {
                 <button onClick={newRound}>Start Next Round</button>
               </div>
             )}
+
+            <div className="entry-card compact-card queue-card">
+              <h2>{queueTitle}</h2>
+              <p>{queueDescription}</p>
+              {activeQueueClaims.length ? (
+                <>
+                  <p className="queue-progress">
+                    {activeQueueClaimedCount}/{activeQueueClaims.length} have claimed
+                  </p>
+                  {!liveState.finalCall && isLastGroup ? (
+                    <p className="entry-message">This is the last group.</p>
+                  ) : null}
+                  <div className="roster-list" role="list">
+                    {activeQueueClaims.map((claim) => {
+                      const hasClaimedCurrentGroup = claim.redeemedRound === currentRound;
+
+                      return (
+                        <div key={claim.claimId} className="roster-row" role="listitem">
+                          <div className="roster-primary">
+                            <strong>#{claim.number}</strong>
+                            <span>{claim.displayName}</span>
+                          </div>
+                          <div className="roster-meta">
+                            <span
+                              className={`roster-badge ${hasClaimedCurrentGroup ? "roster-badge--claimed" : "roster-badge--waiting"}`}
+                            >
+                              {hasClaimedCurrentGroup ? "Claimed" : "Waiting"}
+                            </span>
+                            <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                            <span
+                              className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                            >
+                              {claim.isMember ? "Member" : "Not Member"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p>
+                  {liveState.finalCall
+                    ? "Everyone from the final-call list has claimed an item."
+                    : liveState.current === 0
+                      ? "No group is active yet."
+                      : "No attendees are in the current group."}
+                </p>
+              )}
+            </div>
+
+            <div className="entry-card compact-card roster-card">
+              <h2>Attendee Roster</h2>
+              <p>Total people with numbers: {totalPeopleWithNumbers}</p>
+              {currentEventClaims.length ? (
+                <div className="roster-list" role="list">
+                  {currentEventClaims.map((claim) => (
+                    <div key={claim.claimId} className="roster-row" role="listitem">
+                      <div className="roster-primary">
+                        <strong>#{claim.number}</strong>
+                        <span>{claim.displayName}</span>
+                      </div>
+                      <div className="roster-meta">
+                        <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                        <span
+                          className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                        >
+                          {claim.isMember ? "Member" : "Not Member"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>No attendees have claimed a number yet.</p>
+              )}
+            </div>
+            </div>
+            {isEventDetailsModalOpen ? renderEventDetailsModal() : null}
           </>
-        ) : (
-          <div className="entry-card compact-card">
-            <h2>No live event</h2>
-            <p>Start a live event to open attendee sign-ups and the display screen.</p>
-          </div>
-        )}
+        ) : null}
 
         {scannerActive ? (
           <div className="scanner-modal" role="dialog" aria-modal="true" aria-label="Claim scanner">
@@ -1002,6 +1280,34 @@ function App() {
             ) : null}
           </div>
         ) : null}
+
+        {isEventLive ? (
+          <div className="bottom-navbar">
+            <button className="secondary-button bottom-navbar-button" onClick={logout}>
+              Logout
+            </button>
+            <button
+              className="bottom-navbar-button"
+              type="button"
+              onClick={() => {
+                setScanFeedback(null);
+                setScannerActive(true);
+              }}
+              disabled={scanLoading || !isEventLive}
+            >
+              Open Scanner
+            </button>
+            <button className="secondary-button bottom-navbar-button" onClick={openDisplayScreen}>
+              Open Display Screen
+            </button>
+          </div>
+        ) : (
+          <div className="bottom-navbar">
+            <button className="secondary-button bottom-navbar-button" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1024,6 +1330,10 @@ function App() {
 
   if (!isEventLive) {
     return renderClosedEventPage();
+  }
+
+  if (!claimAccessGranted && !claimResult) {
+    return renderClaimAccessGatePage();
   }
 
   return renderClaimPage();

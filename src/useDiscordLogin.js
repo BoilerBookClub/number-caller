@@ -10,6 +10,7 @@ const SESSION_EXPIRATION_TIME = 24 * 60 * 60 * 1000;
 
 const clearStoredSession = () => {
   localStorage.removeItem("discordUser");
+  localStorage.removeItem("discordUsername");
   localStorage.removeItem("accessToken");
   localStorage.removeItem("loginTime");
 };
@@ -52,6 +53,7 @@ const persistDiscordUser = async (userData) => {
 
 export default function useDiscordLogin() {
   const [user, setUser] = useState("");
+  const [username, setUsername] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
@@ -61,6 +63,7 @@ export default function useDiscordLogin() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem("discordUser");
+    const storedUsername = localStorage.getItem("discordUsername");
     const storedToken = localStorage.getItem("accessToken");
     const loginTime = Number(localStorage.getItem("loginTime"));
     const sessionExpired =
@@ -73,6 +76,7 @@ export default function useDiscordLogin() {
       clearStoredSession();
     } else {
       setUser(storedUser);
+      setUsername(storedUsername || storedUser);
       setAccessToken(storedToken);
     }
 
@@ -106,8 +110,10 @@ export default function useDiscordLogin() {
       })
       .then(async (userData) => {
         setUser(userData.id);
+        setUsername(userData.username || userData.id);
         setAccessToken(token);
         localStorage.setItem("discordUser", userData.id);
+        localStorage.setItem("discordUsername", userData.username || userData.id);
         await persistDiscordUser(userData);
         setAuthError("");
       })
@@ -209,6 +215,7 @@ export default function useDiscordLogin() {
 
   const logout = () => {
     setUser("");
+    setUsername("");
     setAccessToken("");
     setIsMember(false);
     setHasFullAccess(false);
@@ -226,5 +233,6 @@ export default function useDiscordLogin() {
     roleLoading,
     startOAuthGrant,
     user,
+    username,
   };
 }

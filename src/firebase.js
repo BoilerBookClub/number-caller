@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import {
+  collection,
   doc,
   getFirestore,
   onSnapshot,
@@ -36,6 +37,10 @@ const liveStateRef = firebaseEnabled
 
 const getClaimRef = (claimId) =>
   doc(db, "events", "live-number-caller", "claims", claimId);
+
+const claimsCollectionRef = firebaseEnabled
+  ? collection(db, "events", "live-number-caller", "claims")
+  : null;
 
 export const getModeFromUrl = () => {
   const params = new URLSearchParams(window.location.search);
@@ -94,7 +99,27 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
   );
 };
 
+export const subscribeToClaims = ({ onClaims, onError }) => {
+  if (!firebaseEnabled) {
+    return () => {};
+  }
+
+  return onSnapshot(
+    claimsCollectionRef,
+    (snapshot) => {
+      onClaims(
+        snapshot.docs.map((claimDoc) => ({
+          claimId: claimDoc.id,
+          ...claimDoc.data(),
+        })),
+      );
+    },
+    onError,
+  );
+};
+
 export const createLiveEvent = async ({
+  claimAccessSecret,
   eventId,
   state,
   timeframeEnd,
@@ -108,6 +133,7 @@ export const createLiveEvent = async ({
   await setDoc(liveStateRef, {
     active: true,
     claimCount: 0,
+    claimAccessSecret,
     eventId,
     nextClaimNumber: 1,
     state,
@@ -157,6 +183,7 @@ export const closeLiveEvent = async ({ state }) => {
   await setDoc(liveStateRef, {
     active: false,
     claimCount: 0,
+    claimAccessSecret: "",
     endedAt: serverTimestamp(),
     eventId: null,
     nextClaimNumber: 1,
@@ -174,6 +201,7 @@ export const claimEventNumber = async ({
   displayName,
   email,
   eventId,
+  isMember,
   participantType,
 }) => {
   if (!firebaseEnabled) {
@@ -212,6 +240,8 @@ export const claimEventNumber = async ({
       return {
         claimId,
         existing: true,
+        isMember: existingClaim.isMember ?? false,
+        itemsClaimedCount: existingClaim.itemsClaimedCount ?? 0,
         number: existingClaim.number,
         qrToken,
         redeemedRound: existingClaim.redeemedRound ?? 0,
@@ -227,6 +257,8 @@ export const claimEventNumber = async ({
       displayName,
       email: email ?? null,
       eventId,
+      isMember: isMember ?? false,
+      itemsClaimedCount: 0,
       number,
       participantType,
       qrToken,
@@ -243,6 +275,8 @@ export const claimEventNumber = async ({
     return {
       claimId,
       existing: false,
+      isMember: isMember ?? false,
+      itemsClaimedCount: 0,
       number,
       qrToken,
       redeemedRound: 0,
@@ -298,6 +332,7 @@ export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
     }
 
     transaction.update(claimRef, {
+      itemsClaimedCount: (claim.itemsClaimedCount ?? 0) + 1,
       redeemedAt: serverTimestamp(),
       redeemedRound: currentRound,
       updatedAt: serverTimestamp(),
