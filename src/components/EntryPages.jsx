@@ -63,14 +63,16 @@ function ClosedEventPage({
           <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
           <span>Event Staff Login</span>
         </h2>
-        {!loggedIn || !hasFullAccess ? (
-          <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
-            {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
-          </button>
-        ) : null}
-        {loggedIn && hasFullAccess && !isCheckingAccess ? (
-          <button onClick={onOpenControl}>Open Control Panel</button>
-        ) : null}
+        <div className="entry-staff-action">
+          {!loggedIn || !hasFullAccess ? (
+            <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
+              {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
+            </button>
+          ) : null}
+          {loggedIn && hasFullAccess && !isCheckingAccess ? (
+            <button onClick={onOpenControl}>Open Control Panel</button>
+          ) : null}
+        </div>
         {loggedIn && !hasFullAccess && !isCheckingAccess ? (
           <p className="entry-message">
             This login is not on the staff allowlist.

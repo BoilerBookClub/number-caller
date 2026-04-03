@@ -3,6 +3,7 @@ import bbcLogo from "../assets/bbc_logo.png";
 import { getEventTitleClassName } from "../titleFonts";
 
 function DisplayPage({
+  displayFeedItems,
   isEventLive,
   liveEvent,
   liveState,
@@ -36,7 +37,7 @@ function DisplayPage({
         <div className="display-main">
           {liveState.current === 0 && !liveState.finalCall ? (
             <div className="final-call">
-              <h1 className="rainbow-text">Starting Soon</h1>
+              <h1>Starting Soon</h1>
             </div>
           ) : !liveState.finalCall ? (
             <>
@@ -48,7 +49,7 @@ function DisplayPage({
           ) : (
             <>
               <div className="final-call">
-                <h1 className="rainbow-text">FINAL CALL</h1>
+                <h1>FINAL CALL</h1>
               </div>
               <h2 style={{ color: "#7b5200" }}>If you have NOT gotten an item yet, please come forward</h2>
             </>
@@ -77,6 +78,27 @@ function DisplayPage({
               <QRCode value={rotatingClaimAccessUrl} size={160} />
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {displayFeedItems.length ? (
+        <div className="display-feed-overlay" aria-live="polite" aria-atomic="false">
+          {displayFeedItems.map((feedItem) => (
+            <div key={feedItem.id} className="display-feed-item">
+              <div className="display-feed-avatar" aria-hidden="true">
+                {feedItem.avatarUrl ? (
+                  <img src={feedItem.avatarUrl} alt="" className="display-feed-avatar-image" />
+                ) : (
+                  <span className="display-feed-avatar-fallback">
+                    {(feedItem.username?.trim()?.charAt(0) ?? "?").toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <p className="display-feed-copy">
+                <strong>{feedItem.username}</strong> {feedItem.action}
+              </p>
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

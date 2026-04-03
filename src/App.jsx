@@ -273,6 +273,8 @@ const buildClaimRulesAcknowledgedKey = (eventId, claimId) =>
 const buildClaimLastNotifiedRoundKey = (eventId, claimId) =>
   `claimLastNotifiedRound:${eventId}:${claimId}`;
 
+const DISPLAY_FEED_ITEM_LIFETIME_MS = 100_000;
+
 const readStoredBoolean = (key) => window.localStorage.getItem(key) === "true";
 
 const getBrowserNotificationPermission = () => {
@@ -290,21 +292,32 @@ const sendBrowserNotification = async ({ body, registration, tag, title }) => {
 
   const notificationOptions = {
     body,
+    data: {
+      url: window.location.href,
+    },
     tag,
   };
 
   if (registration?.showNotification) {
-    await registration.showNotification(title, notificationOptions);
-    return true;
+    try {
+      await registration.showNotification(title, notificationOptions);
+      return true;
+    } catch {
+      // Fall back to the window notification API if the worker is not ready yet.
+    }
   }
 
-  const notification = new window.Notification(title, notificationOptions);
+  try {
+    const notification = new window.Notification(title, notificationOptions);
 
-  notification.onclick = () => {
-    window.focus();
-  };
+    notification.onclick = () => {
+      window.focus();
+    };
 
-  return true;
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const getClaimAccessCodeFromUrl = () => {
@@ -352,13 +365,16 @@ function App() {
   );
   const [claimAccessGranted, setClaimAccessGranted] = useState(false);
   const [claimAccessStatus, setClaimAccessStatus] = useState("");
+  const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
+  const previousClaimFeedSnapshotRef = useRef(null);
   const scannerRef = useRef(null);
   const scannerVideoRef = useRef(null);
   const scanHandlerRef = useRef(null);
   const notificationRegistrationRef = useRef(null);
+  const displayFeedTimeoutsRef = useRef(new Map());
   const {
     authError,
     hasFullAccess,
@@ -488,6 +504,25 @@ function App() {
     (mode === null && Boolean(claimResult) && isClaimRulesOpen) ||
     (mode === "control" && isEventLive && isEventDetailsModalOpen);
 
+  const pushDisplayFeedItem = useCallback((item) => {
+    const feedItemId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const nextFeedItem = {
+      id: feedItemId,
+      ...item,
+    };
+
+    setDisplayFeedItems((currentItems) => [nextFeedItem, ...currentItems].slice(0, 5));
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayFeedItems((currentItems) =>
+        currentItems.filter((currentItem) => currentItem.id !== feedItemId),
+      );
+      displayFeedTimeoutsRef.current.delete(feedItemId);
+    }, DISPLAY_FEED_ITEM_LIFETIME_MS);
+
+    displayFeedTimeoutsRef.current.set(feedItemId, timeoutId);
+  }, []);
+
   const changeMode = useCallback((nextMode, options = {}) => {
     const { replace = false } = options;
 
@@ -600,7 +635,8 @@ function App() {
 
     const registerNotificationWorker = async () => {
       try {
-        const registration = await navigator.serviceWorker.register("/notification-sw.js");
+        await navigator.serviceWorker.register("/notification-sw.js");
+        const registration = await navigator.serviceWorker.ready;
 
         if (!isDisposed) {
           notificationRegistrationRef.current = registration;
@@ -668,17 +704,25 @@ function App() {
       }
     };
 
+    const handlePageShow = () => {
+      void syncLiveEvent();
+    };
+
+    void syncLiveEvent();
+
     const intervalId = window.setInterval(() => {
       void syncLiveEvent();
     }, 5_000);
 
     window.addEventListener("focus", handleVisibilityRefresh);
+    window.addEventListener("pageshow", handlePageShow);
     document.addEventListener("visibilitychange", handleVisibilityRefresh);
 
     return () => {
       isDisposed = true;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleVisibilityRefresh);
+      window.removeEventListener("pageshow", handlePageShow);
       document.removeEventListener("visibilitychange", handleVisibilityRefresh);
     };
   }, []);
@@ -699,6 +743,13 @@ function App() {
     return () => {
       window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => () => {
+    displayFeedTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    displayFeedTimeoutsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -772,6 +823,12 @@ function App() {
     }
 
     previousEventIdRef.current = liveEvent.eventId;
+    previousClaimFeedSnapshotRef.current = null;
+    displayFeedTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    displayFeedTimeoutsRef.current.clear();
+    setDisplayFeedItems([]);
     resetClaimFlow();
   }, [liveEvent.eventId]);
 
@@ -831,17 +888,33 @@ function App() {
       return;
     }
 
-    try {
-      void sendBrowserNotification({
+    let isDisposed = false;
+
+    const notifyForRound = async () => {
+      const didSend = await sendBrowserNotification({
         body: `Number ${effectiveClaimResult.number} is up in round ${currentRound}. Come grab an item and show your QR code to staff.`,
         registration: notificationRegistrationRef.current,
         tag: `${effectiveClaimResult.claimId}-round-${currentRound}`,
         title: `${liveState.title}: It's your turn`,
       });
-      window.localStorage.setItem(claimLastNotifiedRoundKey, String(currentRound));
-    } catch {
+
+      if (isDisposed) {
+        return;
+      }
+
+      if (didSend) {
+        window.localStorage.setItem(claimLastNotifiedRoundKey, String(currentRound));
+        return;
+      }
+
       setNotificationPermission(getBrowserNotificationPermission());
-    }
+    };
+
+    void notifyForRound();
+
+    return () => {
+      isDisposed = true;
+    };
   }, [
     areClaimNotificationsEnabled,
     claimLastNotifiedRoundKey,
@@ -968,17 +1041,25 @@ function App() {
       }
     };
 
+    const handlePageShow = () => {
+      void syncClaimRecord();
+    };
+
+    void syncClaimRecord();
+
     const intervalId = window.setInterval(() => {
       void syncClaimRecord();
     }, 3_000);
 
     window.addEventListener("focus", handleVisibilityRefresh);
+    window.addEventListener("pageshow", handlePageShow);
     document.addEventListener("visibilitychange", handleVisibilityRefresh);
 
     return () => {
       isDisposed = true;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleVisibilityRefresh);
+      window.removeEventListener("pageshow", handlePageShow);
       document.removeEventListener("visibilitychange", handleVisibilityRefresh);
     };
   }, [attendeeClaimId]);
@@ -1057,20 +1138,62 @@ function App() {
   useEffect(() => {
     if (!isEventLive) {
       setClaimRoster([]);
+      previousClaimFeedSnapshotRef.current = null;
       return undefined;
     }
 
     return subscribeToClaims({
       onClaims: (nextClaims) => {
-        setClaimRoster(
-          nextClaims.map((nextClaim) => normalizeRosterClaim(nextClaim, userProfilesByUserId)),
+        const normalizedClaims = nextClaims.map((nextClaim) =>
+          normalizeRosterClaim(nextClaim, userProfilesByUserId),
         );
+        const nextClaimSnapshot = new Map(
+          normalizedClaims.map((nextClaim) => [
+            nextClaim.claimId,
+            {
+              avatarUrl: nextClaim.avatarUrl,
+              displayName: nextClaim.displayName,
+              itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
+              redeemedRound: nextClaim.redeemedRound ?? 0,
+            },
+          ]),
+        );
+        const previousClaimSnapshot = previousClaimFeedSnapshotRef.current;
+
+        if (previousClaimSnapshot) {
+          nextClaimSnapshot.forEach((nextClaim, claimId) => {
+            const previousClaim = previousClaimSnapshot.get(claimId);
+
+            if (!previousClaim) {
+              pushDisplayFeedItem({
+                action: "joined",
+                avatarUrl: nextClaim.avatarUrl,
+                username: nextClaim.displayName,
+              });
+              return;
+            }
+
+            if (
+              nextClaim.itemsClaimedCount > previousClaim.itemsClaimedCount ||
+              nextClaim.redeemedRound > previousClaim.redeemedRound
+            ) {
+              pushDisplayFeedItem({
+                action: "claimed an item",
+                avatarUrl: nextClaim.avatarUrl,
+                username: nextClaim.displayName,
+              });
+            }
+          });
+        }
+
+        previousClaimFeedSnapshotRef.current = nextClaimSnapshot;
+        setClaimRoster(normalizedClaims);
       },
       onError: (error) => {
         console.error(error.message || "Unable to sync attendee claims.");
       },
     });
-  }, [isEventLive, userProfilesByUserId]);
+  }, [isEventLive, pushDisplayFeedItem, userProfilesByUserId]);
 
   useEffect(() => {
     if (!isEventLive) {
@@ -1466,6 +1589,7 @@ function App() {
   if (mode === "display") {
     return (
       <DisplayPage
+        displayFeedItems={displayFeedItems}
         nextQrCountdownSeconds={nextQrCountdownSeconds}
         qrRotationProgress={qrRotationProgress}
         isEventLive={isEventLive}

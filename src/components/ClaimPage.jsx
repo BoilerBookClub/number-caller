@@ -89,19 +89,15 @@ function ClaimResultCard({
       </div>
       <p>
         {showClaimQr
-          ? "Come up and grab an item!"
+          ? `Your turn is active for round ${currentRound}. A staff member will scan this QR code after you pick one item.`
           : "Your spot is saved. Watch the display screen to see when your number is called."}
       </p>
       {isClaimActive ? (
         <div className="claim-qr-inline-block">
-          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
           <div className="claim-qr-box">
             <QRCode value={claimQrPayload} size={180} />
           </div>
-          <p>
-            Your turn is active for round {currentRound}. A staff member will scan this QR code
-            after you pick one item.
-          </p>
+          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
         </div>
       ) : null}
       <div className="claim-card-actions">
