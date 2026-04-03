@@ -222,6 +222,15 @@ function ControlPage({
     : liveState.current === 0
       ? "No group is active yet."
       : "No attendees are in the current group.";
+  const isCurrentGroupFullyClaimed =
+    !liveState.finalCall &&
+    liveState.current > 0 &&
+    activeQueueClaims.length > 0 &&
+    activeQueueClaims.every((claim) => claim.redeemedRound === currentRound);
+  const isFinalCallFullyClaimed =
+    liveState.finalCall &&
+    activeQueueClaims.length > 0 &&
+    activeQueueClaims.every((claim) => claim.redeemedRound === currentRound);
 
   return (
     <div className="control">
@@ -281,7 +290,10 @@ function ControlPage({
               <>
                 {!isLastGroup ? (
                   <div>
-                    <button onClick={() => onIncrement(10)}>
+                    <button
+                      className={isCurrentGroupFullyClaimed ? "ready-button" : undefined}
+                      onClick={() => onIncrement(10)}
+                    >
                       {liveState.round === 1 && liveState.current === 0
                         ? "Start Round 1"
                         : "Next Group"}
@@ -298,7 +310,12 @@ function ControlPage({
               </>
             ) : (
               <div>
-                <button onClick={onNewRound}>Start Next Round</button>
+                <button
+                  className={isFinalCallFullyClaimed ? "ready-button" : undefined}
+                  onClick={onNewRound}
+                >
+                  Start Next Round
+                </button>
               </div>
             )}
 

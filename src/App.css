@@ -572,6 +572,17 @@ button:disabled {
   border-color: #8e1717;
 }
 
+.ready-button {
+  background: #2e7d32;
+  border: 1px solid #256628;
+  color: #ffffff;
+}
+
+.ready-button:hover:not(:disabled) {
+  background: #276b2b;
+  border-color: #1f5722;
+}
+
 .assigned-number {
   font-size: clamp(4rem, 14vw, 7rem);
   font-weight: 900;
