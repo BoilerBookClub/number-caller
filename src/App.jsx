@@ -14,6 +14,7 @@ import {
 import {
   buildClaimAccessCode,
   CLAIM_ACCESS_GRANT_MS,
+  CLAIM_ACCESS_ROTATION_MS,
   createClaimAccessSecret,
   isValidClaimAccessCode,
 } from "./claimAccess";
@@ -34,6 +35,7 @@ import {
   subscribeToUsers,
   updateLiveEventDetails,
 } from "./firebase";
+import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
 
 const defaultQrUrl =
@@ -41,8 +43,11 @@ const defaultQrUrl =
 
 const initialState = {
   title: "BOILER BOOK CLUB EVENT",
+  titleFont: DEFAULT_TITLE_FONT,
   qrUrl: defaultQrUrl,
+  memberCheckInLeadMinutes: 15,
   current: 0,
+  groupStartedAt: null,
   last: 0,
   round: 1,
   finalCall: false,
@@ -51,9 +56,21 @@ const initialState = {
 
 const initialControlForm = {
   title: initialState.title,
+  titleFont: initialState.titleFont,
   qrUrl: initialState.qrUrl,
+  memberCheckInLeadMinutes: String(initialState.memberCheckInLeadMinutes),
   timeframeStart: "19:00",
   timeframeEnd: "21:00",
+};
+
+const normalizeMemberCheckInLeadMinutes = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return initialState.memberCheckInLeadMinutes;
+  }
+
+  return parsedValue;
 };
 
 const normalizeState = (nextState) => ({
@@ -108,10 +125,11 @@ const buildClaimResultFromRecord = (claimRecord) => {
 
 const looksLikeDiscordId = (value) => /^\d{16,20}$/.test(value ?? "");
 
-const normalizeRosterClaim = (nextClaim, usernamesByUserId) => {
-  const profileUsername = nextClaim.discordUserId
-    ? usernamesByUserId[nextClaim.discordUserId]
-    : "";
+const normalizeRosterClaim = (nextClaim, userProfilesByUserId) => {
+  const profile = nextClaim.discordUserId
+    ? userProfilesByUserId[nextClaim.discordUserId]
+    : null;
+  const profileUsername = profile?.username ?? "";
   const storedDisplayName = nextClaim.displayName?.trim() ?? "";
   const resolvedDisplayName =
     !storedDisplayName || looksLikeDiscordId(storedDisplayName)
@@ -120,6 +138,7 @@ const normalizeRosterClaim = (nextClaim, usernamesByUserId) => {
 
   return {
     claimId: nextClaim.claimId,
+    avatarUrl: profile?.avatarUrl ?? "",
     displayName: resolvedDisplayName,
     eventId: nextClaim.eventId ?? null,
     isMember: nextClaim.isMember ?? false,
@@ -145,6 +164,23 @@ const formatClockTime = (value) => {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+};
+
+const formatElapsedDuration = (elapsedMs) => {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return "0:00";
+  }
+
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 };
 
 const formatTimeRange = (start, end) => {
@@ -226,6 +262,25 @@ const clearConfirmedClaimAccess = () => {
   window.localStorage.removeItem(CONFIRMED_CLAIM_ACCESS_KEY);
 };
 
+const buildClaimNotificationsEnabledKey = (eventId, claimId) =>
+  `claimNotificationsEnabled:${eventId}:${claimId}`;
+
+const buildClaimRulesAcknowledgedKey = (eventId, claimId) =>
+  `claimRulesAcknowledged:${eventId}:${claimId}`;
+
+const buildClaimLastNotifiedRoundKey = (eventId, claimId) =>
+  `claimLastNotifiedRound:${eventId}:${claimId}`;
+
+const readStoredBoolean = (key) => window.localStorage.getItem(key) === "true";
+
+const getBrowserNotificationPermission = () => {
+  if (!("Notification" in window)) {
+    return "unsupported";
+  }
+
+  return window.Notification.permission;
+};
+
 const getClaimAccessCodeFromUrl = () => {
   const params = new URLSearchParams(window.location.search);
   return params.get("claim")?.trim() ?? "";
@@ -257,13 +312,19 @@ function App() {
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
   const [claimRoster, setClaimRoster] = useState([]);
-  const [usernamesByUserId, setUsernamesByUserId] = useState({});
+  const [userProfilesByUserId, setUserProfilesByUserId] = useState({});
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
   const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState(false);
+  const [isClaimRulesOpen, setIsClaimRulesOpen] = useState(false);
+  const [areClaimNotificationsEnabled, setAreClaimNotificationsEnabled] = useState(false);
+  const [claimNotificationMessage, setClaimNotificationMessage] = useState("");
+  const [notificationPermission, setNotificationPermission] = useState(
+    getBrowserNotificationPermission(),
+  );
   const [claimAccessGranted, setClaimAccessGranted] = useState(false);
   const [claimAccessStatus, setClaimAccessStatus] = useState("");
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -296,8 +357,11 @@ function App() {
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
   const eventStartTime = getTodayTime(liveEvent.timeframeStart);
+  const memberCheckInLeadMinutes = normalizeMemberCheckInLeadMinutes(
+    liveState.memberCheckInLeadMinutes,
+  );
   const memberEarlyAccessTime = eventStartTime
-    ? new Date(eventStartTime.getTime() - 30 * 60 * 1000)
+    ? new Date(eventStartTime.getTime() - memberCheckInLeadMinutes * 60 * 1000)
     : null;
   const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
   const isClaimWindowOpen =
@@ -320,13 +384,28 @@ function App() {
   const rotatingClaimAccessUrl = rotatingClaimAccessCode
     ? buildClaimAccessUrl(rotatingClaimAccessCode)
     : "";
+  const qrRotationElapsedMs = currentTime % CLAIM_ACCESS_ROTATION_MS;
+  const qrRotationRemainingMs = CLAIM_ACCESS_ROTATION_MS - qrRotationElapsedMs;
+  const qrRotationProgress = qrRotationElapsedMs / CLAIM_ACCESS_ROTATION_MS;
+  const nextQrCountdownSeconds = Math.ceil(qrRotationRemainingMs / 1000);
   const attendeeClaimKey = loggedIn && user ? `discord:${user}` : "";
   const attendeeClaimId =
     liveEvent.eventId && attendeeClaimKey
       ? buildClaimId(liveEvent.eventId, attendeeClaimKey)
       : claimResult?.claimId ?? "";
+  const claimRulesAcknowledgedKey =
+    liveEvent.eventId && attendeeClaimId
+      ? buildClaimRulesAcknowledgedKey(liveEvent.eventId, attendeeClaimId)
+      : "";
+  const claimNotificationsEnabledKey =
+    liveEvent.eventId && attendeeClaimId
+      ? buildClaimNotificationsEnabledKey(liveEvent.eventId, attendeeClaimId)
+      : "";
+  const claimLastNotifiedRoundKey =
+    liveEvent.eventId && attendeeClaimId
+      ? buildClaimLastNotifiedRoundKey(liveEvent.eventId, attendeeClaimId)
+      : "";
   const effectiveClaimResult = claimResult ?? buildClaimResultFromRecord(claimRecord);
-  const hadAttendeeClaim = Boolean(effectiveClaimResult);
   const attendeeClaimNumber = claimRecord?.number ?? claimResult?.number ?? null;
   const hasClaimedCurrentRound = claimRecord?.redeemedRound === currentRound;
   const hasReachedClaimNumber =
@@ -353,15 +432,23 @@ function App() {
       currentEventClaims.find((claim) => claim.claimId === claimId) ?? null,
     )
     .filter(Boolean);
+  const activeQueueElapsedLabel =
+    liveState.groupStartedAt && (liveState.finalCall || liveState.current > 0)
+      ? formatElapsedDuration(Math.max(0, currentTime - liveState.groupStartedAt))
+      : "";
   const activeQueueClaims = liveState.finalCall ? finalCallTargetClaims : currentGroupClaims;
   const isLastGroup =
     !liveState.finalCall && liveState.current > 0 && liveState.current >= totalPeopleWithNumbers;
-  const queueTitle = liveState.finalCall ? "Final Call" : "Current Group";
+  const queueTitle = liveState.finalCall
+    ? "Final Call"
+    : liveState.current === 0
+      ? "Group"
+      : `Group ${liveState.last + 1}-${liveState.current}`;
   const queueDescription = liveState.finalCall
     ? `Showing everyone who had not claimed an item before final call started for round ${currentRound}.`
     : liveState.current === 0
       ? "Call the first group to start item pickup."
-      : `Tracking attendees in numbers ${liveState.last + 1}-${liveState.current}.`;
+      : "";
   const isDisplayRoute = mode === "display";
   const isAttendeeClaimRoute =
     mode === null &&
@@ -370,7 +457,7 @@ function App() {
     attendeeClaimNumber <= liveState.current;
   const shouldCelebrateCurrentCall = isDisplayRoute || isAttendeeClaimRoute;
 
-  const changeMode = (nextMode, options = {}) => {
+  const changeMode = useCallback((nextMode, options = {}) => {
     const { replace = false } = options;
 
     setMode(nextMode);
@@ -379,7 +466,7 @@ function App() {
       document.title,
       getScreenUrl(nextMode),
     );
-  };
+  }, []);
 
   const openDisplayScreen = () => {
     window.open(displayUrl, "_blank", "noopener,noreferrer");
@@ -396,10 +483,64 @@ function App() {
   }, [logout]);
 
   const resetClaimFlow = () => {
+    setAreClaimNotificationsEnabled(false);
+    setClaimNotificationMessage("");
     setClaimResult(null);
     setClaimRecord(null);
     setClaimError("");
     setClaimLoading(false);
+    setIsClaimRulesOpen(false);
+  };
+
+  const acknowledgeClaimRules = () => {
+    if (claimRulesAcknowledgedKey) {
+      window.localStorage.setItem(claimRulesAcknowledgedKey, "true");
+    }
+
+    setIsClaimRulesOpen(false);
+  };
+
+  const openClaimRules = () => {
+    setIsClaimRulesOpen(true);
+  };
+
+  const toggleClaimNotifications = async () => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      setClaimNotificationMessage("Browser notifications are not supported on this device.");
+      return;
+    }
+
+    if (areClaimNotificationsEnabled) {
+      if (claimNotificationsEnabledKey) {
+        window.localStorage.removeItem(claimNotificationsEnabledKey);
+      }
+
+      setAreClaimNotificationsEnabled(false);
+      setClaimNotificationMessage("Notifications turned off.");
+      setNotificationPermission(window.Notification.permission);
+      return;
+    }
+
+    let permission = window.Notification.permission;
+
+    if (permission === "default") {
+      permission = await window.Notification.requestPermission();
+    }
+
+    setNotificationPermission(permission);
+
+    if (permission !== "granted") {
+      setClaimNotificationMessage("Notifications are blocked. Allow them in your browser to get alerts.");
+      return;
+    }
+
+    if (claimNotificationsEnabledKey) {
+      window.localStorage.setItem(claimNotificationsEnabledKey, "true");
+    }
+
+    setAreClaimNotificationsEnabled(true);
+    setClaimNotificationMessage("Notifications turned on. We’ll alert you when your number is called.");
   };
 
   const closeEventDetailsModal = () => {
@@ -451,12 +592,12 @@ function App() {
     }
 
     changeMode("control", { replace: true });
-  }, [claimAccessCode, hasFullAccess, isCheckingAccess, loggedIn, mode]);
+  }, [changeMode, claimAccessCode, hasFullAccess, isCheckingAccess, loggedIn, mode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       setCurrentTime(Date.now());
-    }, 30_000);
+    }, 1_000);
 
     return () => {
       window.clearInterval(timer);
@@ -489,17 +630,23 @@ function App() {
 
     setControlForm({
       qrUrl: liveState.qrUrl,
+      memberCheckInLeadMinutes: String(
+        normalizeMemberCheckInLeadMinutes(liveState.memberCheckInLeadMinutes),
+      ),
       timeframeEnd: liveEvent.timeframeEnd || initialControlForm.timeframeEnd,
       timeframeStart:
         liveEvent.timeframeStart || initialControlForm.timeframeStart,
       title: liveState.title,
+      titleFont: normalizeTitleFont(liveState.titleFont),
     });
   }, [
     isEventLive,
     liveEvent.timeframeEnd,
     liveEvent.timeframeStart,
+    liveState.memberCheckInLeadMinutes,
     liveState.qrUrl,
     liveState.title,
+    liveState.titleFont,
   ]);
 
   useEffect(() => {
@@ -512,6 +659,73 @@ function App() {
   }, [liveEvent.eventId]);
 
   useEffect(() => {
+    if (!effectiveClaimResult || !claimRulesAcknowledgedKey) {
+      setIsClaimRulesOpen(false);
+      return;
+    }
+
+    setIsClaimRulesOpen(!readStoredBoolean(claimRulesAcknowledgedKey));
+  }, [claimRulesAcknowledgedKey, effectiveClaimResult]);
+
+  useEffect(() => {
+    if (!effectiveClaimResult || !claimNotificationsEnabledKey) {
+      setAreClaimNotificationsEnabled(false);
+      setClaimNotificationMessage("");
+      return;
+    }
+
+    setAreClaimNotificationsEnabled(readStoredBoolean(claimNotificationsEnabledKey));
+  }, [claimNotificationsEnabledKey, effectiveClaimResult]);
+
+  useEffect(() => {
+    setNotificationPermission(getBrowserNotificationPermission());
+  }, []);
+
+  useEffect(() => {
+    if (
+      !showClaimQr ||
+      !effectiveClaimResult ||
+      !areClaimNotificationsEnabled ||
+      notificationPermission !== "granted" ||
+      !claimLastNotifiedRoundKey
+    ) {
+      return;
+    }
+
+    const lastNotifiedRound = Number.parseInt(
+      window.localStorage.getItem(claimLastNotifiedRoundKey) ?? "0",
+      10,
+    );
+
+    if (lastNotifiedRound === currentRound) {
+      return;
+    }
+
+    try {
+      const notification = new window.Notification(`${liveState.title}: It’s your turn`, {
+        body: `Number ${effectiveClaimResult.number} is up in round ${currentRound}. Come grab an item and show your QR code to staff.`,
+        tag: `${effectiveClaimResult.claimId}-round-${currentRound}`,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+      };
+
+      window.localStorage.setItem(claimLastNotifiedRoundKey, String(currentRound));
+    } catch {
+      setClaimNotificationMessage("We couldn’t send a browser notification on this device.");
+    }
+  }, [
+    areClaimNotificationsEnabled,
+    claimLastNotifiedRoundKey,
+    currentRound,
+    effectiveClaimResult,
+    liveState.title,
+    notificationPermission,
+    showClaimQr,
+  ]);
+
+  useEffect(() => {
     if (isEventLive) {
       previousLiveEventTitleRef.current = liveState.title?.trim() || initialState.title;
     }
@@ -520,20 +734,22 @@ function App() {
 
     if (isEventLive) {
       setEndedEventTitle("");
-    } else if (wasEventLive && mode !== "control") {
+    } else if (wasEventLive) {
       const completedEventTitle = previousLiveEventTitleRef.current;
 
-      if (hadAttendeeClaim) {
-        setEndedEventTitle(completedEventTitle);
-      }
+      setEndedEventTitle(completedEventTitle);
 
       if (loggedIn) {
         handleLogout();
       }
+
+      if (mode === "control") {
+        changeMode(null, { replace: true });
+      }
     }
 
     previousIsEventLiveRef.current = isEventLive;
-  }, [hadAttendeeClaim, handleLogout, isEventLive, liveState.title, loggedIn, mode]);
+  }, [changeMode, handleLogout, isEventLive, liveState.title, loggedIn, mode]);
 
   useEffect(() => {
     if (!attendeeClaimId) {
@@ -654,32 +870,35 @@ function App() {
     return subscribeToClaims({
       onClaims: (nextClaims) => {
         setClaimRoster(
-          nextClaims.map((nextClaim) => normalizeRosterClaim(nextClaim, usernamesByUserId)),
+          nextClaims.map((nextClaim) => normalizeRosterClaim(nextClaim, userProfilesByUserId)),
         );
       },
       onError: (error) => {
         console.error(error.message || "Unable to sync attendee claims.");
       },
     });
-  }, [isEventLive, usernamesByUserId]);
+  }, [isEventLive, userProfilesByUserId]);
 
   useEffect(() => {
     if (!isEventLive) {
-      setUsernamesByUserId({});
+      setUserProfilesByUserId({});
       return undefined;
     }
 
     return subscribeToUsers({
       onUsers: (nextUsers) => {
-        setUsernamesByUserId(
+        setUserProfilesByUserId(
           nextUsers.reduce((accumulator, nextUser) => {
-            accumulator[nextUser.userId] = nextUser.username || nextUser.userId;
+            accumulator[nextUser.userId] = {
+              avatarUrl: nextUser.avatarUrl || "",
+              username: nextUser.username || nextUser.userId,
+            };
             return accumulator;
           }, {}),
         );
       },
       onError: (error) => {
-        console.error(error.message || "Unable to sync Discord usernames.");
+        console.error(error.message || "Unable to sync Discord user profiles.");
       },
     });
   }, [isEventLive]);
@@ -870,11 +1089,13 @@ function App() {
     }
 
     setControlMessage("");
+    const groupStartedAt = Date.now();
     persistState({
       ...liveState,
       current: liveState.current + amount,
       finalCall: false,
       finalCallTargetClaimIds: [],
+      groupStartedAt,
       last: liveState.current,
     });
   };
@@ -886,6 +1107,7 @@ function App() {
       current: 0,
       finalCall: false,
       finalCallTargetClaimIds: [],
+      groupStartedAt: null,
       last: 0,
       round: liveState.round + 1,
     });
@@ -893,12 +1115,14 @@ function App() {
 
   const activateFinalCall = () => {
     setControlMessage("");
+    const groupStartedAt = Date.now();
     persistState({
       ...liveState,
       finalCall: true,
       finalCallTargetClaimIds: currentEventClaims
         .filter((claim) => claim.redeemedRound !== currentRound)
         .map((claim) => claim.claimId),
+      groupStartedAt,
     });
   };
 
@@ -921,19 +1145,39 @@ function App() {
     return "";
   };
 
+  const validateMemberCheckInLeadMinutes = () => {
+    const parsedValue = Number.parseInt(controlForm.memberCheckInLeadMinutes, 10);
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+      return "Member early check-in time must be 0 minutes or more.";
+    }
+
+    return "";
+  };
+
   const buildEventStateFromForm = () =>
     normalizeState({
       ...liveState,
+      memberCheckInLeadMinutes: normalizeMemberCheckInLeadMinutes(
+        controlForm.memberCheckInLeadMinutes,
+      ),
       qrUrl: controlForm.qrUrl.trim() || defaultQrUrl,
       title: controlForm.title.trim() || initialState.title,
+      titleFont: normalizeTitleFont(controlForm.titleFont),
     });
 
   const handleStartEvent = async (event) => {
     event.preventDefault();
     const timeframeError = validateTimeframe();
+    const memberCheckInLeadMinutesError = validateMemberCheckInLeadMinutes();
 
     if (timeframeError) {
       setControlMessage(timeframeError);
+      return;
+    }
+
+    if (memberCheckInLeadMinutesError) {
+      setControlMessage(memberCheckInLeadMinutesError);
       return;
     }
 
@@ -963,9 +1207,15 @@ function App() {
   const handleSaveEventDetails = async (event) => {
     event.preventDefault();
     const timeframeError = validateTimeframe();
+    const memberCheckInLeadMinutesError = validateMemberCheckInLeadMinutes();
 
     if (timeframeError) {
       setControlMessage(timeframeError);
+      return;
+    }
+
+    if (memberCheckInLeadMinutesError) {
+      setControlMessage(memberCheckInLeadMinutesError);
       return;
     }
 
@@ -1023,6 +1273,8 @@ function App() {
   if (mode === "display") {
     return (
       <DisplayPage
+        nextQrCountdownSeconds={nextQrCountdownSeconds}
+        qrRotationProgress={qrRotationProgress}
         isEventLive={isEventLive}
         liveEvent={liveEvent}
         liveState={liveState}
@@ -1068,6 +1320,7 @@ function App() {
         liveEvent={liveEvent}
         liveState={liveState}
         onActivateFinalCall={activateFinalCall}
+        activeQueueElapsedLabel={activeQueueElapsedLabel}
         onCloseEvent={handleCloseEvent}
         onCloseEventDetails={closeEventDetailsModal}
         onCloseScanner={() => setScannerActive(false)}
@@ -1126,6 +1379,8 @@ function App() {
 
   return (
     <ClaimPage
+      areClaimNotificationsEnabled={areClaimNotificationsEnabled}
+      claimNotificationMessage={claimNotificationMessage}
       claimError={claimError}
       claimLoading={claimLoading}
       claimQrPayload={claimQrPayload}
@@ -1134,6 +1389,7 @@ function App() {
       currentRound={currentRound}
       eventStartLabel={eventStartLabel}
       hasClaimedCurrentRound={hasClaimedCurrentRound}
+      isClaimRulesOpen={isClaimRulesOpen}
       isCheckingAccess={isCheckingAccess}
       isClaimWindowOpen={isClaimWindowOpen}
       isEventStarted={isEventStarted}
@@ -1144,9 +1400,13 @@ function App() {
       loggedIn={loggedIn}
       memberEarlyAccessLabel={memberEarlyAccessLabel}
       memberEarlyAccessTime={memberEarlyAccessTime}
+      notificationPermission={notificationPermission}
+      onAcknowledgeRules={acknowledgeClaimRules}
+      onOpenClaimRules={openClaimRules}
       onLogout={handleLogout}
       onOpenBookList={openBookList}
       onStartOAuthGrant={startOAuthGrant}
+      onToggleClaimNotifications={toggleClaimNotifications}
       showClaimQr={showClaimQr}
     />
   );

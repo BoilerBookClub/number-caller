@@ -1,6 +1,14 @@
 import QRCode from "react-qr-code";
+import { getEventTitleClassName } from "../titleFonts";
 
-function DisplayPage({ isEventLive, liveEvent, liveState, rotatingClaimAccessUrl }) {
+function DisplayPage({
+  isEventLive,
+  liveEvent,
+  liveState,
+  nextQrCountdownSeconds,
+  qrRotationProgress,
+  rotatingClaimAccessUrl,
+}) {
   if (!isEventLive) {
     return (
       <div className="display empty-state">
@@ -9,11 +17,16 @@ function DisplayPage({ isEventLive, liveEvent, liveState, rotatingClaimAccessUrl
     );
   }
 
+  const countdownLabel =
+    nextQrCountdownSeconds === 1
+      ? "Next QR code in 1 second"
+      : `Next QR code in ${nextQrCountdownSeconds} seconds`;
+
   return (
     <div className="display">
       <p className="eyebrow">{liveEvent.timeframeLabel}</p>
-      <h1 className="carnival">{liveState.title}</h1>
-      <h1>ROUND {liveState.round}</h1>
+      <h1 className={getEventTitleClassName(liveState.titleFont, "carnival")}>{liveState.title}</h1>
+      <h2 style={{ color: "#7b5200" }}>ROUND {liveState.round}</h2>
 
       <div className="display-content-row">
         <div className="display-main">
@@ -26,14 +39,14 @@ function DisplayPage({ isEventLive, liveEvent, liveState, rotatingClaimAccessUrl
               <h1 className="number rainbow-text">
                 {liveState.last + 1}-{liveState.current}
               </h1>
-              <h1>may select an item now!</h1>
+                            <h2 style={{ color: "#7b5200" }}>may select an item now!</h2>
             </>
           ) : (
             <>
               <div className="final-call">
                 <h1 className="rainbow-text">FINAL CALL</h1>
               </div>
-              <h2>If you have NOT gotten an item yet, please come forward</h2>
+              <h2 style={{ color: "#7b5200" }}>If you have NOT gotten an item yet, please come forward</h2>
             </>
           )}
         </div>
@@ -46,6 +59,15 @@ function DisplayPage({ isEventLive, liveEvent, liveState, rotatingClaimAccessUrl
             <div className="qr-claim-copy">
               <h2 className="qr-caption">Scan to Claim Your Number</h2>
               <p className="qr-helper-text">This attendee QR refreshes every minute.</p>
+              <div className="qr-refresh-status" aria-live="polite">
+                <p className="qr-refresh-label">{countdownLabel}</p>
+                <div className="qr-refresh-track" aria-hidden="true">
+                  <div
+                    className="qr-refresh-fill"
+                    style={{ width: `${Math.max(0, Math.min(1, qrRotationProgress)) * 100}%` }}
+                  />
+                </div>
+              </div>
             </div>
             <div className="qr-code qr-code--claim">
               <QRCode value={rotatingClaimAccessUrl} size={160} />

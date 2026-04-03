@@ -2,6 +2,7 @@ import displayIcon from "../assets/display.svg";
 import editIcon from "../assets/edit.svg";
 import groupIcon from "../assets/group.svg";
 import scanIcon from "../assets/scan.svg";
+import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
 
 function EventDetailsModal({
   controlForm,
@@ -40,6 +41,16 @@ function EventDetailsModal({
               />
             </label>
             <label className="control-input-group control-input-group--centered">
+              <span>Event Title Font</span>
+              <select value={controlForm.titleFont} onChange={onFieldChange("titleFont")}>
+                {TITLE_FONT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="control-input-group control-input-group--centered">
               <span>Book List URL</span>
               <input
                 type="url"
@@ -66,6 +77,20 @@ function EventDetailsModal({
                 />
               </label>
             </div>
+            <label className="control-input-group control-input-group--centered">
+              <span>Member Early Check-In</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={controlForm.memberCheckInLeadMinutes}
+                onChange={onFieldChange("memberCheckInLeadMinutes")}
+                placeholder="15"
+              />
+              <small className="control-input-hint">
+                Minutes before the event start that members can claim a number.
+              </small>
+            </label>
             {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
             <div className="control-actions">
               <button type="submit" disabled={controlSaving}>
@@ -96,16 +121,24 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
         {claimedCount}/{claims.length} have claimed
       </p>
       {!isFinalCall && isLastGroup ? (
-        <p className="entry-message">This is the last group.</p>
+        <p className="entry-message">This is the last group. Use Final Call when you&apos;re ready.</p>
       ) : null}
       <div className="roster-list" role="list">
         {claims.map((claim) => {
           const hasClaimedCurrentGroup = claim.redeemedRound === currentRound;
+          const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
           return (
             <div key={claim.claimId} className="roster-row" role="listitem">
               <div className="roster-primary">
                 <strong>#{claim.number}</strong>
+                                <div className="roster-avatar" aria-hidden="true">
+                  {claim.avatarUrl ? (
+                    <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
+                  ) : (
+                    <span className="roster-avatar-fallback">{avatarLabel}</span>
+                  )}
+                </div>
                 <span>{claim.displayName}</span>
               </div>
               <div className="roster-meta">
@@ -129,29 +162,39 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
   );
 }
 
-function FullRoster({ claims, totalPeopleWithNumbers }) {
+function FullRoster({ claims }) {
   return (
     <div className="entry-card compact-card roster-card">
-      <h2>Attendee Roster</h2>
-      <p>Total people with numbers: {totalPeopleWithNumbers}</p>
+      <h2>Attendee List</h2>
       {claims.length ? (
         <div className="roster-list" role="list">
-          {claims.map((claim) => (
-            <div key={claim.claimId} className="roster-row" role="listitem">
-              <div className="roster-primary">
-                <strong>#{claim.number}</strong>
-                <span>{claim.displayName}</span>
+          {claims.map((claim) => {
+            const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
+
+            return (
+              <div key={claim.claimId} className="roster-row" role="listitem">
+                <div className="roster-primary">
+                  <strong>#{claim.number}</strong>
+                                    <div className="roster-avatar" aria-hidden="true">
+                    {claim.avatarUrl ? (
+                      <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
+                    ) : (
+                      <span className="roster-avatar-fallback">{avatarLabel}</span>
+                    )}
+                  </div>
+                  <span>{claim.displayName}</span>
+                </div>
+                <div className="roster-meta">
+                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                  <span
+                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                  >
+                    {claim.isMember ? "Member" : "Not Member"}
+                  </span>
+                </div>
               </div>
-              <div className="roster-meta">
-                <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                <span
-                  className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
-                >
-                  {claim.isMember ? "Member" : "Not Member"}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p>No attendees have claimed a number yet.</p>
@@ -216,6 +259,7 @@ function ControlPage({
   queueDescription,
   queueTitle,
   activeQueueClaims,
+  activeQueueElapsedLabel,
   scanFeedback,
   scanLoading,
   scannerActive,
@@ -256,7 +300,7 @@ function ControlPage({
         <>
           <div className={`control-dashboard${isEventDetailsModalOpen ? " control-dashboard--blurred" : ""}`}>
             <div className="control-event-header">
-              <h1>{liveState.title}</h1>
+              <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
               <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
               <p className="control-event-subtitle control-event-link">
                 <a href={liveState.qrUrl} target="_blank" rel="noreferrer">
@@ -265,7 +309,7 @@ function ControlPage({
               </p>
               <div className="control-actions">
                 <button
-                  className="secondary-button icon-button"
+                  className="secondary-button icon-button control-side-action"
                   type="button"
                   onClick={onOpenEventDetails}
                   aria-label="Edit event details"
@@ -273,8 +317,38 @@ function ControlPage({
                 >
                   <img src={editIcon} alt="" className="button-icon" />
                 </button>
+                {!liveState.finalCall ? (
+                  isLastGroup ? (
+                    <button
+                      className={`control-primary-action${isReadyForFinalCall ? " ready-button" : ""}`}
+                      type="button"
+                      onClick={onActivateFinalCall}
+                    >
+                      Final Call
+                    </button>
+                  ) : (
+                    <button
+                      className={`control-primary-action${isCurrentGroupFullyClaimed ? " ready-button" : ""}`}
+                      type="button"
+                      onClick={() => onIncrement(10)}
+                      disabled={liveState.current === 0 && !canStartRound}
+                    >
+                      {liveState.round === 1 && liveState.current === 0
+                        ? "Start Round 1"
+                        : "Next Group"}
+                    </button>
+                  )
+                ) : (
+                  <button
+                    className={`control-primary-action${isFinalCallFullyClaimed ? " ready-button" : ""}`}
+                    type="button"
+                    onClick={onNewRound}
+                  >
+                    Start Next Round
+                  </button>
+                )}
                 <button
-                  className="danger-button"
+                  className="danger-button control-side-action"
                   type="button"
                   onClick={onCloseEvent}
                   disabled={controlSaving}
@@ -305,50 +379,17 @@ function ControlPage({
 
             {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
 
-            {!liveState.finalCall ? (
-              <>
-                {!isLastGroup ? (
-                  <div>
-                    <button
-                      className={isCurrentGroupFullyClaimed ? "ready-button" : undefined}
-                      onClick={() => onIncrement(10)}
-                      disabled={liveState.current === 0 && !canStartRound}
-                    >
-                      {liveState.round === 1 && liveState.current === 0
-                        ? "Start Round 1"
-                        : "Next Group"}
-                    </button>
-                  </div>
-                ) : (
-                  <p className="entry-message">
-                    This is the last group. Use Final Call when you&apos;re ready.
-                  </p>
-                )}
-                {isReadyForFinalCall ? (
-                  <div>
-                    <button className="ready-button" onClick={onActivateFinalCall}>
-                      Final Call
-                    </button>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <div>
-                <button
-                  className={isFinalCallFullyClaimed ? "ready-button" : undefined}
-                  onClick={onNewRound}
-                >
-                  Start Next Round
-                </button>
-              </div>
-            )}
+           
 
             <div className="entry-card compact-card queue-card">
               <h2 className="queue-title">
                 {!liveState.finalCall ? <img src={groupIcon} alt="" className="title-icon" /> : null}
                 <span>{queueTitle}</span>
               </h2>
-              <p>{queueDescription}</p>
+              {activeQueueElapsedLabel ? (
+                <p className="queue-timer">Up for {activeQueueElapsedLabel}</p>
+              ) : null}
+              {queueDescription ? <p>{queueDescription}</p> : null}
               <ClaimList
                 claims={activeQueueClaims}
                 currentRound={currentRound}
@@ -358,7 +399,7 @@ function ControlPage({
               />
             </div>
 
-            <FullRoster claims={currentEventClaims} totalPeopleWithNumbers={totalPeopleWithNumbers} />
+            <FullRoster claims={currentEventClaims} />
           </div>
           {isEventDetailsModalOpen ? (
             <EventDetailsModal

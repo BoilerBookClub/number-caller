@@ -1,3 +1,5 @@
+import { getEventTitleClassName } from "../titleFonts";
+
 function ControlAccessDenied({
   authError,
   handleLogout,
@@ -56,7 +58,7 @@ function ClosedEventPage({
         </div>
       ) : null}
       <div className="entry-card">
-        <h2>Staff Login</h2>
+        <h2>Event Staff Login</h2>
         {!loggedIn || !hasFullAccess ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
@@ -91,7 +93,7 @@ function ClaimAccessGatePage({
     <div className="entry-screen">
       <div className="entry-card hero-card">
         <p className="eyebrow">Live Event</p>
-        <h1>{liveState.title}</h1>
+        <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
         {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
         <h2>Staff Login</h2>
         {!loggedIn || !hasFullAccess ? (

@@ -1,17 +1,83 @@
 import QRCode from "react-qr-code";
+import { getEventTitleClassName } from "../titleFonts";
+
+function ClaimRulesModal({
+  areClaimNotificationsEnabled,
+  claimNotificationMessage,
+  liveState,
+  notificationPermission,
+  onAcknowledgeRules,
+  onToggleClaimNotifications,
+}) {
+  const notificationLabel =
+    areClaimNotificationsEnabled
+      ? "Notifications On"
+      : notificationPermission === "unsupported"
+        ? "Notifications Unavailable"
+        : "Turn On Notifications";
+
+  return (
+    <div className="claim-rules-backdrop" role="presentation">
+      <div className="claim-rules-modal" role="dialog" aria-modal="true" aria-label="Claim rules">
+        <div className="claim-rules-content">
+          <p className="eyebrow">Before You Start</p>
+          <h2>Welcome to {liveState.title}!</h2>
+          <div className="claim-rules-copy">
+            <p>You will be assigned a number based on when you arrived.</p>
+            <p>Numbers will be called sequentially.</p>
+            <p>
+              Before your number is called, read the book descriptions, which are linked below your
+              number, so you know what you&apos;d like to grab.
+            </p>
+            <p>
+              When your number is called, come up and grab an item. Once you have your item, have
+              your QR code, which will appear when it&apos;s your turn, scanned by a staff member.
+            </p>
+            <p>
+              There will likely be multiple rounds of goodie selection, so once the current round
+              ends, you&apos;ll be up again for more. You&apos;ll want to stick around.
+            </p>
+          </div>
+          <div className="claim-rules-actions">
+            <button className="secondary-button" type="button" onClick={onToggleClaimNotifications}>
+              {notificationLabel}
+            </button>
+            <button type="button" onClick={onAcknowledgeRules}>
+              Got it!
+            </button>
+          </div>
+          {claimNotificationMessage ? (
+            <p className="status-message status-message--info">{claimNotificationMessage}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ClaimResultCard({
+  areClaimNotificationsEnabled,
+  claimNotificationMessage,
   claimQrPayload,
   claimRecord,
   claimResult,
   currentRound,
   hasClaimedCurrentRound,
   liveCallLabel,
+  notificationPermission,
+  onOpenClaimRules,
   onOpenBookList,
+  onToggleClaimNotifications,
   showClaimQr,
 }) {
+  const notificationButtonLabel = areClaimNotificationsEnabled
+    ? "Notifications On"
+    : notificationPermission === "unsupported"
+      ? "Notifications Unavailable"
+      : "Notifications Off";
+
   return (
-    <div className="entry-card assigned-card claim-modal-card">
+    <div className={`entry-card assigned-card claim-modal-card${showClaimQr ? " claim-modal-card--active" : ""}`}>
       <p className="eyebrow">{showClaimQr ? "You're up!" : "You're in line"}</p>
       <h2>Your number is</h2>
       <div className={`assigned-number${showClaimQr ? " rainbow-text" : ""}`}>
@@ -22,9 +88,20 @@ function ClaimResultCard({
           ? "Come up and grab an item!"
           : "Your spot is saved. Watch the display screen to see when your number is called."}
       </p>
-      <button className="secondary-button" onClick={onOpenBookList}>
-        Open Book Descriptions
-      </button>
+      <div className="claim-card-actions">
+        <button className="secondary-button" type="button" onClick={onOpenBookList}>
+          Open Book Descriptions
+        </button>
+        <button className="secondary-button" type="button" onClick={onToggleClaimNotifications}>
+          {notificationButtonLabel}
+        </button>
+        <button className="secondary-button" type="button" onClick={onOpenClaimRules}>
+          Info
+        </button>
+      </div>
+      {claimNotificationMessage ? (
+        <p className="status-message status-message--info">{claimNotificationMessage}</p>
+      ) : null}
       <div className="claim-status-grid">
         <div className="stat-card">
           <span>Round</span>
@@ -87,7 +164,7 @@ function MemberClaimCard({
   return (
     <div className="entry-card claim-modal-card">
       <p className="eyebrow">Live Event</p>
-      <h1>{liveState.title}</h1>
+      <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
       {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
       <h2>Claim Your Number</h2>
       <p>Log in with Discord and we'll assign your number automatically.</p>
@@ -125,12 +202,13 @@ function MemberClaimCard({
 }
 
 function ClaimPage(props) {
-  const { claimResult } = props;
+  const { claimResult, isClaimRulesOpen } = props;
 
   return (
     <div className="claim-page claim-page--focused">
       {claimResult ? <ClaimResultCard {...props} /> : null}
       {!claimResult ? <MemberClaimCard {...props} /> : null}
+      {claimResult && isClaimRulesOpen ? <ClaimRulesModal {...props} /> : null}
     </div>
   );
 }
