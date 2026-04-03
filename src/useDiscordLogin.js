@@ -7,6 +7,30 @@ const TARGET_GUILD_ID = "835995185817059439";
 const REQUIRED_ROLE_ID = "937848500287336478";
 const SPECIAL_ROLE_IDS = ["835995868007104543"];
 const SESSION_EXPIRATION_TIME = 24 * 60 * 60 * 1000;
+const DISCORD_REDIRECT_PATH = "/";
+const POST_LOGIN_PATH_KEY = "discordPostLoginPath";
+
+const buildDiscordRedirectUri = () =>
+  new URL(DISCORD_REDIRECT_PATH, window.location.origin).toString();
+
+const normalizeReturnPath = (value) => {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return DISCORD_REDIRECT_PATH;
+  }
+
+  return value;
+};
+
+const readPostLoginPath = () => {
+  const storedPath = window.sessionStorage.getItem(POST_LOGIN_PATH_KEY);
+
+  if (!storedPath) {
+    return null;
+  }
+
+  window.sessionStorage.removeItem(POST_LOGIN_PATH_KEY);
+  return normalizeReturnPath(storedPath);
+};
 
 const clearStoredSession = () => {
   localStorage.removeItem("discordUser");
@@ -82,6 +106,8 @@ export default function useDiscordLogin() {
 
     const params = new URLSearchParams(window.location.hash.slice(1));
     const token = params.get("access_token");
+    const returnPath =
+      readPostLoginPath() ?? normalizeReturnPath(params.get("state"));
 
     if (!token || (!sessionExpired && storedToken)) {
       setLoading(false);
@@ -93,7 +119,7 @@ export default function useDiscordLogin() {
     window.history.replaceState(
       {},
       document.title,
-      `${window.location.pathname}${window.location.search}`,
+      returnPath,
     );
 
     fetch("https://discord.com/api/users/@me", {
@@ -203,8 +229,11 @@ export default function useDiscordLogin() {
   }, [user, accessToken]);
 
   const startOAuthGrant = () => {
-    const redirectUri = encodeURIComponent(
-      `${window.location.origin}${window.location.pathname}${window.location.search}`,
+    const redirectUri = encodeURIComponent(buildDiscordRedirectUri());
+
+    window.sessionStorage.setItem(
+      POST_LOGIN_PATH_KEY,
+      `${window.location.pathname}${window.location.search}`,
     );
 
     window.open(

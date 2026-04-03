@@ -32,8 +32,13 @@ npm run dev
 
 Use these URLs locally or after deployment:
 
-- Display screen: `/` or `/?mode=display`
-- Control screen: `/?mode=control`
+- Main attendee screen: `/`
+- Display screen: `/display`
+- Control screen: `/control`
+
+For Discord OAuth, add this exact redirect URL in the Discord developer portal:
+
+- `https://eventpass.boilerbookclub.com/`
 
 ## Deploy to Firebase Hosting
 
