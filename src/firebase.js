@@ -3,8 +3,10 @@ import {
   doc,
   getFirestore,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -26,7 +28,7 @@ const requiredConfig = [
 export const firebaseEnabled = requiredConfig.every(Boolean);
 
 const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
-const db = firebaseEnabled ? getFirestore(app) : null;
+export const db = firebaseEnabled ? getFirestore(app) : null;
 const liveStateRef = firebaseEnabled
   ? doc(db, "events", "live-number-caller")
   : null;
@@ -40,12 +42,17 @@ export const getModeFromUrl = () => {
 
 export const getScreenUrl = (mode) => {
   const url = new URL(window.location.href);
-  url.searchParams.set("mode", mode);
+
+  if (mode) {
+    url.searchParams.set("mode", mode);
+  } else {
+    url.searchParams.delete("mode");
+  }
 
   return url.toString();
 };
 
-export const subscribeToLiveState = ({ onState, onError }) => {
+export const subscribeToLiveEvent = ({ onEvent, onError }) => {
   if (!firebaseEnabled) {
     return () => {};
   }
@@ -54,24 +61,150 @@ export const subscribeToLiveState = ({ onState, onError }) => {
     liveStateRef,
     (snapshot) => {
       if (!snapshot.exists()) {
-        onState(null);
+        onEvent(null);
         return;
       }
 
-      const data = snapshot.data();
-      onState(data.state ?? null);
+      onEvent(snapshot.data());
     },
     onError,
   );
 };
 
-export const pushLiveState = async (state) => {
+export const createLiveEvent = async ({
+  eventId,
+  state,
+  timeframeEnd,
+  timeframeLabel,
+  timeframeStart,
+}) => {
   if (!firebaseEnabled) {
-    return;
+    throw new Error("Firebase is not configured.");
   }
 
   await setDoc(liveStateRef, {
+    active: true,
+    claimCount: 0,
+    eventId,
+    nextClaimNumber: 1,
+    state,
+    startedAt: serverTimestamp(),
+    timeframeEnd,
+    timeframeLabel,
+    timeframeStart,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const updateLiveEventDetails = async ({
+  state,
+  timeframeEnd,
+  timeframeLabel,
+  timeframeStart,
+}) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  await updateDoc(liveStateRef, {
+    state,
+    timeframeEnd,
+    timeframeLabel,
+    timeframeStart,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const pushLiveState = async (state) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  await updateDoc(liveStateRef, {
     state,
     updatedAt: serverTimestamp(),
+  });
+};
+
+export const closeLiveEvent = async ({ state }) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  await setDoc(liveStateRef, {
+    active: false,
+    claimCount: 0,
+    endedAt: serverTimestamp(),
+    eventId: null,
+    nextClaimNumber: 1,
+    state,
+    timeframeEnd: "",
+    timeframeLabel: "",
+    timeframeStart: "",
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const claimEventNumber = async ({
+  claimKey,
+  discordUserId,
+  displayName,
+  email,
+  eventId,
+  participantType,
+}) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const claimId = `${eventId}__${encodeURIComponent(claimKey)}`;
+  const claimRef = doc(db, "events", "live-number-caller", "claims", claimId);
+
+  return runTransaction(db, async (transaction) => {
+    const liveEventSnapshot = await transaction.get(liveStateRef);
+
+    if (!liveEventSnapshot.exists()) {
+      throw new Error("The event is not open yet.");
+    }
+
+    const liveEvent = liveEventSnapshot.data();
+
+    if (!liveEvent.active || liveEvent.eventId !== eventId) {
+      throw new Error("This event is no longer accepting claims.");
+    }
+
+    const existingClaimSnapshot = await transaction.get(claimRef);
+
+    if (existingClaimSnapshot.exists()) {
+      const existingClaim = existingClaimSnapshot.data();
+
+      return {
+        existing: true,
+        number: existingClaim.number,
+      };
+    }
+
+    const number = liveEvent.nextClaimNumber ?? 1;
+
+    transaction.set(claimRef, {
+      claimedAt: serverTimestamp(),
+      discordUserId: discordUserId ?? null,
+      displayName,
+      email: email ?? null,
+      eventId,
+      number,
+      participantType,
+    });
+
+    transaction.update(liveStateRef, {
+      claimCount: number,
+      nextClaimNumber: number + 1,
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      existing: false,
+      number,
+    };
   });
 };
