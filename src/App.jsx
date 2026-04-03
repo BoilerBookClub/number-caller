@@ -276,11 +276,35 @@ const buildClaimLastNotifiedRoundKey = (eventId, claimId) =>
 const readStoredBoolean = (key) => window.localStorage.getItem(key) === "true";
 
 const getBrowserNotificationPermission = () => {
-  if (!("Notification" in window)) {
+  if (!("Notification" in window) || !window.isSecureContext) {
     return "unsupported";
   }
 
   return window.Notification.permission;
+};
+
+const sendBrowserNotification = async ({ body, registration, tag, title }) => {
+  if (!("Notification" in window) || !window.isSecureContext) {
+    return false;
+  }
+
+  const notificationOptions = {
+    body,
+    tag,
+  };
+
+  if (registration?.showNotification) {
+    await registration.showNotification(title, notificationOptions);
+    return true;
+  }
+
+  const notification = new window.Notification(title, notificationOptions);
+
+  notification.onclick = () => {
+    window.focus();
+  };
+
+  return true;
 };
 
 const getClaimAccessCodeFromUrl = () => {
@@ -334,6 +358,7 @@ function App() {
   const scannerRef = useRef(null);
   const scannerVideoRef = useRef(null);
   const scanHandlerRef = useRef(null);
+  const notificationRegistrationRef = useRef(null);
   const {
     authError,
     hasFullAccess,
@@ -457,6 +482,11 @@ function App() {
     attendeeClaimNumber > liveState.last &&
     attendeeClaimNumber <= liveState.current;
   const shouldCelebrateCurrentCall = isDisplayRoute || isAttendeeClaimRoute;
+  const shouldRedirectToControl =
+    loggedIn && hasFullAccess && !isCheckingAccess && mode === null && !claimAccessCode;
+  const shouldLockBackgroundScroll =
+    (mode === null && Boolean(claimResult) && isClaimRulesOpen) ||
+    (mode === "control" && isEventLive && isEventDetailsModalOpen);
 
   const changeMode = useCallback((nextMode, options = {}) => {
     const { replace = false } = options;
@@ -505,7 +535,7 @@ function App() {
   };
 
   const toggleClaimNotifications = async () => {
-    if (!("Notification" in window)) {
+    if (!("Notification" in window) || !window.isSecureContext) {
       setNotificationPermission("unsupported");
       return;
     }
@@ -537,6 +567,17 @@ function App() {
     }
 
     setAreClaimNotificationsEnabled(true);
+
+    try {
+      await sendBrowserNotification({
+        body: "You’ll get an alert here when your number is called.",
+        registration: notificationRegistrationRef.current,
+        tag: `claim-notifications-enabled:${attendeeClaimId || "pending"}`,
+        title: `${liveState.title}: Notifications On`,
+      });
+    } catch {
+      setNotificationPermission(getBrowserNotificationPermission());
+    }
   };
 
   const closeEventDetailsModal = () => {
@@ -556,6 +597,36 @@ function App() {
 
     return () => {
       window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+      notificationRegistrationRef.current = null;
+      return undefined;
+    }
+
+    let isDisposed = false;
+
+    const registerNotificationWorker = async () => {
+      try {
+        const registration = await navigator.serviceWorker.register("/notification-sw.js");
+
+        if (!isDisposed) {
+          notificationRegistrationRef.current = registration;
+        }
+      } catch (error) {
+        if (!isDisposed) {
+          notificationRegistrationRef.current = null;
+          console.error(error.message || "Unable to register notification service worker.");
+        }
+      }
+    };
+
+    void registerNotificationWorker();
+
+    return () => {
+      isDisposed = true;
     };
   }, []);
 
@@ -623,18 +694,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (
-      !loggedIn ||
-      !hasFullAccess ||
-      isCheckingAccess ||
-      mode !== null ||
-      claimAccessCode
-    ) {
+    if (!shouldRedirectToControl) {
       return;
     }
 
     changeMode("control", { replace: true });
-  }, [changeMode, claimAccessCode, hasFullAccess, isCheckingAccess, loggedIn, mode]);
+  }, [changeMode, shouldRedirectToControl]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -645,6 +710,21 @@ function App() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldLockBackgroundScroll) {
+      return undefined;
+    }
+
+    const { body, documentElement } = document;
+    documentElement.classList.add("modal-scroll-locked");
+    body.classList.add("modal-scroll-locked");
+
+    return () => {
+      documentElement.classList.remove("modal-scroll-locked");
+      body.classList.remove("modal-scroll-locked");
+    };
+  }, [shouldLockBackgroundScroll]);
 
   useEffect(() => {
     const previousCurrent = previousCurrentRef.current;
@@ -723,6 +803,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const refreshNotificationPermission = () => {
+      setNotificationPermission(getBrowserNotificationPermission());
+    };
+
+    window.addEventListener("focus", refreshNotificationPermission);
+    document.addEventListener("visibilitychange", refreshNotificationPermission);
+
+    return () => {
+      window.removeEventListener("focus", refreshNotificationPermission);
+      document.removeEventListener("visibilitychange", refreshNotificationPermission);
+    };
+  }, []);
+
+  useEffect(() => {
     if (
       !showClaimQr ||
       !effectiveClaimResult ||
@@ -743,15 +837,12 @@ function App() {
     }
 
     try {
-      const notification = new window.Notification(`${liveState.title}: It’s your turn`, {
+      void sendBrowserNotification({
         body: `Number ${effectiveClaimResult.number} is up in round ${currentRound}. Come grab an item and show your QR code to staff.`,
+        registration: notificationRegistrationRef.current,
         tag: `${effectiveClaimResult.claimId}-round-${currentRound}`,
+        title: `${liveState.title}: It's your turn`,
       });
-
-      notification.onclick = () => {
-        window.focus();
-      };
-
       window.localStorage.setItem(claimLastNotifiedRoundKey, String(currentRound));
     } catch {
       setNotificationPermission(getBrowserNotificationPermission());
@@ -1387,6 +1478,14 @@ function App() {
         liveState={liveState}
         rotatingClaimAccessUrl={rotatingClaimAccessUrl}
       />
+    );
+  }
+
+  if (shouldRedirectToControl) {
+    return (
+      <div className="mode-select">
+        <h2>Opening control panel...</h2>
+      </div>
     );
   }
 

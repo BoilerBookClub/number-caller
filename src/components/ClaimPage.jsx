@@ -137,7 +137,7 @@ function ClaimResultCard({
           <strong>{liveCallLabel}</strong>
         </div>
       </div>
-      <div className="claim-qr-panel">
+      <div className={`claim-qr-panel${isClaimActive ? " claim-qr-panel--active" : ""}`}>
         {claimRecord ? (
           showClaimQr ? null : hasClaimedCurrentRound ? (
             <p className="status-message status-message--success">

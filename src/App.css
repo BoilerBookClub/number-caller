@@ -965,7 +965,7 @@ button:disabled {
   -webkit-background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: rainbowMove 8s linear infinite;
+  animation: rainbowMove 15s linear infinite;
 }
 
 .rainbow-text {
