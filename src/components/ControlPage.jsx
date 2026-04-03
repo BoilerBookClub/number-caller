@@ -1,3 +1,8 @@
+import displayIcon from "../assets/display.svg";
+import editIcon from "../assets/edit.svg";
+import groupIcon from "../assets/group.svg";
+import scanIcon from "../assets/scan.svg";
+
 function EventDetailsModal({
   controlForm,
   controlMessage,
@@ -227,6 +232,7 @@ function ControlPage({
     liveState.current > 0 &&
     activeQueueClaims.length > 0 &&
     activeQueueClaims.every((claim) => claim.redeemedRound === currentRound);
+  const canStartRound = totalPeopleWithNumbers > 0;
   const isReadyForFinalCall = isLastGroup && isCurrentGroupFullyClaimed;
   const isFinalCallFullyClaimed =
     liveState.finalCall &&
@@ -252,10 +258,20 @@ function ControlPage({
             <div className="control-event-header">
               <h1>{liveState.title}</h1>
               <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
-              <p className="control-event-subtitle control-event-link">{liveState.qrUrl}</p>
+              <p className="control-event-subtitle control-event-link">
+                <a href={liveState.qrUrl} target="_blank" rel="noreferrer">
+                  {liveState.qrUrl}
+                </a>
+              </p>
               <div className="control-actions">
-                <button className="secondary-button" type="button" onClick={onOpenEventDetails}>
-                  Edit Event Details
+                <button
+                  className="secondary-button icon-button"
+                  type="button"
+                  onClick={onOpenEventDetails}
+                  aria-label="Edit event details"
+                  title="Edit event details"
+                >
+                  <img src={editIcon} alt="" className="button-icon" />
                 </button>
                 <button
                   className="danger-button"
@@ -287,6 +303,8 @@ function ControlPage({
               </div>
             </div>
 
+            {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
+
             {!liveState.finalCall ? (
               <>
                 {!isLastGroup ? (
@@ -294,6 +312,7 @@ function ControlPage({
                     <button
                       className={isCurrentGroupFullyClaimed ? "ready-button" : undefined}
                       onClick={() => onIncrement(10)}
+                      disabled={liveState.current === 0 && !canStartRound}
                     >
                       {liveState.round === 1 && liveState.current === 0
                         ? "Start Round 1"
@@ -305,14 +324,13 @@ function ControlPage({
                     This is the last group. Use Final Call when you&apos;re ready.
                   </p>
                 )}
-                <div>
-                  <button
-                    className={isReadyForFinalCall ? "ready-button" : undefined}
-                    onClick={onActivateFinalCall}
-                  >
-                    Final Call
-                  </button>
-                </div>
+                {isReadyForFinalCall ? (
+                  <div>
+                    <button className="ready-button" onClick={onActivateFinalCall}>
+                      Final Call
+                    </button>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div>
@@ -326,7 +344,10 @@ function ControlPage({
             )}
 
             <div className="entry-card compact-card queue-card">
-              <h2>{queueTitle}</h2>
+              <h2 className="queue-title">
+                {!liveState.finalCall ? <img src={groupIcon} alt="" className="title-icon" /> : null}
+                <span>{queueTitle}</span>
+              </h2>
               <p>{queueDescription}</p>
               <ClaimList
                 claims={activeQueueClaims}
@@ -364,19 +385,18 @@ function ControlPage({
 
       {isEventLive ? (
         <div className="bottom-navbar">
-          <button className="secondary-button bottom-navbar-button" onClick={onHandleLogout}>
-            Logout
-          </button>
           <button
             className="bottom-navbar-button"
             type="button"
             onClick={onOpenScanner}
             disabled={scanLoading || !isEventLive}
           >
-            Open Scanner
+            <img src={scanIcon} alt="" className="button-icon" />
+            <span>Open Scanner</span>
           </button>
-          <button className="secondary-button bottom-navbar-button" onClick={onOpenDisplayScreen}>
-            Open Display Screen
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+            <img src={displayIcon} alt="" className="button-icon" />
+            <span>Open Display</span>
           </button>
         </div>
       ) : (

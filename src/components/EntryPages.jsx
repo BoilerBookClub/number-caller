@@ -57,7 +57,6 @@ function ClosedEventPage({
       ) : null}
       <div className="entry-card">
         <h2>Staff Login</h2>
-        <p>Log in with Discord to open the control panel and start the event.</p>
         {!loggedIn || !hasFullAccess ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
@@ -68,7 +67,7 @@ function ClosedEventPage({
         ) : null}
         {loggedIn && !hasFullAccess && !isCheckingAccess ? (
           <p className="entry-message">
-            This login is not on the staff allowlist, so it stays on this page.
+            This login is not on the staff allowlist.
           </p>
         ) : null}
         {authError ? <p className="entry-message">{authError}</p> : null}

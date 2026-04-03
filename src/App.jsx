@@ -864,6 +864,12 @@ function App() {
   };
 
   const increment = (amount) => {
+    if (liveState.current === 0 && totalPeopleWithNumbers === 0) {
+      setControlMessage("At least one attendee must claim a number before starting a round.");
+      return;
+    }
+
+    setControlMessage("");
     persistState({
       ...liveState,
       current: liveState.current + amount,
@@ -874,6 +880,7 @@ function App() {
   };
 
   const newRound = () => {
+    setControlMessage("");
     persistState({
       ...liveState,
       current: 0,
@@ -885,6 +892,7 @@ function App() {
   };
 
   const activateFinalCall = () => {
+    setControlMessage("");
     persistState({
       ...liveState,
       finalCall: true,
