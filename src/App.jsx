@@ -416,6 +416,7 @@ function App() {
   const notificationRegistrationRef = useRef(null);
   const displayFeedTimeoutsRef = useRef(new Map());
   const {
+    accessResolved,
     authError,
     hasFullAccess,
     isMember,
@@ -434,7 +435,7 @@ function App() {
   const liveState = liveEvent.state;
   const { current, finalCall: isFinalCall } = liveState;
   const displayUrl = getScreenUrl("display");
-  const isCheckingAccess = authLoading || roleLoading;
+  const isCheckingAccess = authLoading || roleLoading || (loggedIn && !accessResolved);
   const isEventLive = liveEvent.active;
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
@@ -1790,6 +1791,7 @@ function App() {
 
   return (
     <ClaimPage
+      authError={authError}
       areClaimNotificationsEnabled={areClaimNotificationsEnabled}
       claimError={claimError}
       claimLoading={claimLoading}

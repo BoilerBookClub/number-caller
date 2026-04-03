@@ -81,6 +81,7 @@ export default function useDiscordLogin() {
   const [accessToken, setAccessToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
+  const [accessResolved, setAccessResolved] = useState(false);
   const [isMember, setIsMember] = useState(false);
   const [hasFullAccess, setHasFullAccess] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -158,11 +159,13 @@ export default function useDiscordLogin() {
     if (!user || !accessToken) {
       setIsMember(false);
       setHasFullAccess(false);
+      setAccessResolved(false);
       return;
     }
 
     const checkUserRole = async () => {
       setRoleLoading(true);
+      setAccessResolved(false);
 
       try {
         const response = await fetch(
@@ -222,6 +225,7 @@ export default function useDiscordLogin() {
         setAuthError(error.message || "Unable to verify Discord access.");
       } finally {
         setRoleLoading(false);
+        setAccessResolved(true);
       }
     };
 
@@ -246,6 +250,7 @@ export default function useDiscordLogin() {
     setUser("");
     setUsername("");
     setAccessToken("");
+    setAccessResolved(false);
     setIsMember(false);
     setHasFullAccess(false);
     setAuthError("");
@@ -253,6 +258,7 @@ export default function useDiscordLogin() {
   };
 
   return {
+    accessResolved,
     authError,
     hasFullAccess,
     isMember,

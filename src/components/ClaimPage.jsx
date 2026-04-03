@@ -137,6 +137,7 @@ function ClaimResultCard({
 }
 
 function MemberClaimCard({
+  authError,
   claimError,
   claimLoading,
   claimResult,
@@ -166,15 +167,16 @@ function MemberClaimCard({
         </button>
       ) : null}
       {loggedIn && isCheckingAccess ? <p>Checking your membership...</p> : null}
+      {loggedIn && !isCheckingAccess && authError ? <p className="entry-message">{authError}</p> : null}
       {loggedIn && claimLoading ? <p>Assigning your number...</p> : null}
-      {loggedIn && !isCheckingAccess && !claimLoading && !isClaimWindowOpen ? (
+      {loggedIn && !isCheckingAccess && !claimLoading && !authError && !isClaimWindowOpen ? (
         <p>
           {isMember && memberEarlyAccessTime
             ? `Logged in. Because you have the member role, you can claim starting at ${memberEarlyAccessLabel}.`
             : `Logged in. You need to wait for the event to start at ${eventStartLabel}.`}
         </p>
       ) : null}
-      {loggedIn && !isCheckingAccess && !claimLoading && isClaimWindowOpen && !claimResult ? (
+      {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult ? (
         <p>
           {isMember
             ? isEventStarted
