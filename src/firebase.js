@@ -41,6 +41,7 @@ const getClaimRef = (claimId) =>
 const claimsCollectionRef = firebaseEnabled
   ? collection(db, "events", "live-number-caller", "claims")
   : null;
+const usersCollectionRef = firebaseEnabled ? collection(db, "users") : null;
 
 export const getModeFromUrl = () => {
   const params = new URLSearchParams(window.location.search);
@@ -111,6 +112,25 @@ export const subscribeToClaims = ({ onClaims, onError }) => {
         snapshot.docs.map((claimDoc) => ({
           claimId: claimDoc.id,
           ...claimDoc.data(),
+        })),
+      );
+    },
+    onError,
+  );
+};
+
+export const subscribeToUsers = ({ onUsers, onError }) => {
+  if (!firebaseEnabled) {
+    return () => {};
+  }
+
+  return onSnapshot(
+    usersCollectionRef,
+    (snapshot) => {
+      onUsers(
+        snapshot.docs.map((userDoc) => ({
+          userId: userDoc.id,
+          ...userDoc.data(),
         })),
       );
     },

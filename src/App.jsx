@@ -23,6 +23,7 @@ import {
   subscribeToClaim,
   subscribeToClaims,
   subscribeToLiveEvent,
+  subscribeToUsers,
   updateLiveEventDetails,
 } from "./firebase";
 import useDiscordLogin from "./useDiscordLogin";
@@ -81,15 +82,29 @@ const normalizeClaimRecord = (claimId, nextClaim) => {
   };
 };
 
-const normalizeRosterClaim = (nextClaim) => ({
-  claimId: nextClaim.claimId,
-  displayName: nextClaim.displayName || nextClaim.discordUserId || "Unknown attendee",
-  eventId: nextClaim.eventId ?? null,
-  isMember: nextClaim.isMember ?? false,
-  itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
-  number: nextClaim.number ?? 0,
-  participantType: nextClaim.participantType ?? "discord",
-});
+const looksLikeDiscordId = (value) => /^\d{16,20}$/.test(value ?? "");
+
+const normalizeRosterClaim = (nextClaim, usernamesByUserId) => {
+  const profileUsername = nextClaim.discordUserId
+    ? usernamesByUserId[nextClaim.discordUserId]
+    : "";
+  const storedDisplayName = nextClaim.displayName?.trim() ?? "";
+  const resolvedDisplayName =
+    !storedDisplayName || looksLikeDiscordId(storedDisplayName)
+      ? profileUsername || nextClaim.discordUserId || "Unknown attendee"
+      : storedDisplayName;
+
+  return {
+    claimId: nextClaim.claimId,
+    displayName: resolvedDisplayName,
+    eventId: nextClaim.eventId ?? null,
+    isMember: nextClaim.isMember ?? false,
+    itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
+    number: nextClaim.number ?? 0,
+    participantType: nextClaim.participantType ?? "discord",
+    redeemedRound: nextClaim.redeemedRound ?? 0,
+  };
+};
 
 const formatClockTime = (value) => {
   if (!value) {
@@ -136,6 +151,7 @@ const buildEventId = () =>
   globalThis.crypto?.randomUUID?.() ?? `event-${Date.now()}`;
 
 const CLAIM_ACCESS_GRANT_KEY = "number-caller-claim-access-grant";
+const CONFIRMED_CLAIM_ACCESS_KEY = "number-caller-confirmed-claim-access";
 
 const readClaimAccessGrant = () => {
   const rawGrant = window.sessionStorage.getItem(CLAIM_ACCESS_GRANT_KEY);
@@ -158,6 +174,32 @@ const writeClaimAccessGrant = (grant) => {
 
 const clearClaimAccessGrant = () => {
   window.sessionStorage.removeItem(CLAIM_ACCESS_GRANT_KEY);
+};
+
+const readConfirmedClaimAccess = () => {
+  const rawConfirmedAccess = window.localStorage.getItem(CONFIRMED_CLAIM_ACCESS_KEY);
+
+  if (!rawConfirmedAccess) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawConfirmedAccess);
+  } catch {
+    window.localStorage.removeItem(CONFIRMED_CLAIM_ACCESS_KEY);
+    return null;
+  }
+};
+
+const writeConfirmedClaimAccess = (confirmedAccess) => {
+  window.localStorage.setItem(
+    CONFIRMED_CLAIM_ACCESS_KEY,
+    JSON.stringify(confirmedAccess),
+  );
+};
+
+const clearConfirmedClaimAccess = () => {
+  window.localStorage.removeItem(CONFIRMED_CLAIM_ACCESS_KEY);
 };
 
 const getClaimAccessCodeFromUrl = () => {
@@ -189,6 +231,7 @@ function App() {
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
   const [claimRoster, setClaimRoster] = useState([]);
+  const [usernamesByUserId, setUsernamesByUserId] = useState({});
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
@@ -299,6 +342,12 @@ function App() {
     window.open(qrCodeValue, "_blank", "noopener,noreferrer");
   };
 
+  const handleLogout = () => {
+    clearClaimAccessGrant();
+    clearConfirmedClaimAccess();
+    logout();
+  };
+
   const resetClaimFlow = () => {
     setClaimResult(null);
     setClaimRecord(null);
@@ -330,6 +379,14 @@ function App() {
       },
     });
   }, []);
+
+  useEffect(() => {
+    if (!loggedIn || !hasFullAccess || isCheckingAccess || mode === "control") {
+      return;
+    }
+
+    changeMode("control");
+  }, [hasFullAccess, isCheckingAccess, loggedIn, mode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -407,6 +464,17 @@ function App() {
   }, [claimResult?.claimId]);
 
   useEffect(() => {
+    if (!loggedIn || !claimAccessGranted || !liveEvent.eventId) {
+      return;
+    }
+
+    writeConfirmedClaimAccess({
+      eventId: liveEvent.eventId,
+      userId: user,
+    });
+  }, [claimAccessGranted, liveEvent.eventId, loggedIn, user]);
+
+  useEffect(() => {
     if (!isEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
       setClaimAccessGranted(false);
       setClaimAccessStatus("");
@@ -416,8 +484,13 @@ function App() {
 
     const claimAccessCode = getClaimAccessCodeFromUrl();
     const storedGrant = readClaimAccessGrant();
+    const confirmedAccess = readConfirmedClaimAccess();
     const hasStoredGrant =
       storedGrant?.eventId === liveEvent.eventId && storedGrant?.expiresAt > currentTime;
+    const hasConfirmedAccess =
+      loggedIn &&
+      confirmedAccess?.eventId === liveEvent.eventId &&
+      confirmedAccess?.userId === user;
     const hasFreshCode = isValidClaimAccessCode(
       liveEvent.claimAccessSecret,
       claimAccessCode,
@@ -429,6 +502,12 @@ function App() {
         eventId: liveEvent.eventId,
         expiresAt: currentTime + CLAIM_ACCESS_GRANT_MS,
       });
+      setClaimAccessGranted(true);
+      setClaimAccessStatus("");
+      return;
+    }
+
+    if (hasConfirmedAccess) {
       setClaimAccessGranted(true);
       setClaimAccessStatus("");
       return;
@@ -446,7 +525,14 @@ function App() {
         ? "That attendee QR code expired. Scan the current event QR code to claim a number."
         : "Scan the in-person event QR code to claim a number.",
     );
-  }, [currentTime, isEventLive, liveEvent.claimAccessSecret, liveEvent.eventId]);
+  }, [
+    currentTime,
+    isEventLive,
+    liveEvent.claimAccessSecret,
+    liveEvent.eventId,
+    loggedIn,
+    user,
+  ]);
 
   useEffect(() => {
     if (!isEventLive) {
@@ -456,10 +542,33 @@ function App() {
 
     return subscribeToClaims({
       onClaims: (nextClaims) => {
-        setClaimRoster(nextClaims.map(normalizeRosterClaim));
+        setClaimRoster(
+          nextClaims.map((nextClaim) => normalizeRosterClaim(nextClaim, usernamesByUserId)),
+        );
       },
       onError: (error) => {
         console.error(error.message || "Unable to sync attendee claims.");
+      },
+    });
+  }, [isEventLive, usernamesByUserId]);
+
+  useEffect(() => {
+    if (!isEventLive) {
+      setUsernamesByUserId({});
+      return undefined;
+    }
+
+    return subscribeToUsers({
+      onUsers: (nextUsers) => {
+        setUsernamesByUserId(
+          nextUsers.reduce((accumulator, nextUser) => {
+            accumulator[nextUser.userId] = nextUser.username || nextUser.userId;
+            return accumulator;
+          }, {}),
+        );
+      },
+      onError: (error) => {
+        console.error(error.message || "Unable to sync Discord usernames.");
       },
     });
   }, [isEventLive]);
@@ -787,7 +896,7 @@ function App() {
           </button>
         ) : null}
         {loggedIn ? (
-          <button className="secondary-button" onClick={logout}>
+          <button className="secondary-button" onClick={handleLogout}>
             Logout
           </button>
         ) : null}
@@ -837,13 +946,8 @@ function App() {
         {claimResult.number}
       </div>
       <p>
-        {claimResult.existing
-          ? "You already claimed a number for this event."
-          : "Your spot is saved. Watch the display screen to see when your number is called."}
+        Your spot is saved. Watch the display screen to see when your number is called.
       </p>
-      <button className="secondary-button" onClick={resetClaimFlow}>
-        Back
-      </button>
       <button className="secondary-button" onClick={openBookList}>
         Open Book Descriptions
       </button>
@@ -920,7 +1024,7 @@ function App() {
       ) : null}
       {claimError ? <p className="entry-message">{claimError}</p> : null}
       {loggedIn ? (
-        <button className="secondary-button" onClick={logout}>
+        <button className="secondary-button" onClick={handleLogout}>
           Logout
         </button>
       ) : null}
@@ -1283,7 +1387,7 @@ function App() {
 
         {isEventLive ? (
           <div className="bottom-navbar">
-            <button className="secondary-button bottom-navbar-button" onClick={logout}>
+            <button className="secondary-button bottom-navbar-button" onClick={handleLogout}>
               Logout
             </button>
             <button
@@ -1303,7 +1407,7 @@ function App() {
           </div>
         ) : (
           <div className="bottom-navbar">
-            <button className="secondary-button bottom-navbar-button" onClick={logout}>
+            <button className="secondary-button bottom-navbar-button" onClick={handleLogout}>
               Logout
             </button>
           </div>
