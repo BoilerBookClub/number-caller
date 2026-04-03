@@ -296,6 +296,7 @@ function App() {
     liveEvent.claimAccessSecret,
     currentTime,
   );
+  const claimAccessCode = getClaimAccessCodeFromUrl();
   const rotatingClaimAccessUrl = rotatingClaimAccessCode
     ? buildClaimAccessUrl(rotatingClaimAccessCode)
     : "";
@@ -412,12 +413,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!loggedIn || !hasFullAccess || isCheckingAccess || mode !== null) {
+    if (
+      !loggedIn ||
+      !hasFullAccess ||
+      isCheckingAccess ||
+      mode !== null ||
+      claimAccessCode
+    ) {
       return;
     }
 
     changeMode("control", { replace: true });
-  }, [hasFullAccess, isCheckingAccess, loggedIn, mode]);
+  }, [claimAccessCode, hasFullAccess, isCheckingAccess, loggedIn, mode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -513,7 +520,6 @@ function App() {
       return;
     }
 
-    const claimAccessCode = getClaimAccessCodeFromUrl();
     const storedGrant = readClaimAccessGrant();
     const confirmedAccess = readConfirmedClaimAccess();
     const hasStoredGrant =
