@@ -88,13 +88,11 @@ function ClaimResultCard({
         {claimResult.number}
       </div>
       <p>
-        {showClaimQr
-          ? `Your turn is active for round ${currentRound}. A staff member will scan this QR code after you pick one item.`
-          : "Your spot is saved. Watch the display screen to see when your number is called."}
+        {!showClaimQr && "Your spot is saved. Watch the display screen to see when your number is called."}
       </p>
       {isClaimActive ? (
         <div className="claim-qr-inline-block">
-          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff</p>
+          <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff After Picking an Item</p>
           <div className="claim-qr-box">
             <QRCode value={claimQrPayload} size={180} />
           </div>
@@ -124,8 +122,7 @@ function ClaimResultCard({
             </p>
           ) : (
             <p>
-              Your QR code will appear here once the display reaches number {claimRecord.number}
-              in round {currentRound}.
+              Your QR code will appear here once the display reaches number {claimRecord.number} in round {currentRound}.
             </p>
           )
         ) : (

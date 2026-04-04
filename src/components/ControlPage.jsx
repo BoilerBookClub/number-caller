@@ -928,6 +928,7 @@ function ControlPage({
   autoAdvanceNextGroup,
   autoAdvanceStartRound,
   autoAdvanceThresholdPercent,
+  groupSize,
   backlogClaims,
   controlForm,
   controlMessage,
@@ -954,6 +955,7 @@ function ControlPage({
   onOpenScanner,
   onCloseScanner,
   onNewRound,
+  onGroupSizeChange,
   onStartEvent,
   onSaveEventDetails,
   onToggleAutoAdvance,
@@ -1042,7 +1044,7 @@ function ControlPage({
             liveState.round === 1 && liveState.current === 0
               ? "Start Round 1"
               : "Next Group",
-          onClick: () => onIncrement(10),
+          onClick: () => onIncrement(groupSize),
         }
     : {
         disabled: false,
@@ -1260,6 +1262,25 @@ function ControlPage({
                       </div>
                       <span className="queue-auto-advance-setting-copy">
                         During final call, force next round after this timer even if threshold was not met.
+                      </span>
+                    </div>
+                    <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                      <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
+                        <span className="queue-auto-advance-setting-title">People Per Group</span>
+                      </label>
+                      <div className="queue-auto-advance-inline-control">
+                        <input
+                          type="number"
+                          min="1"
+                          max="500"
+                          step="1"
+                          value={groupSize}
+                          onChange={(event) => onGroupSizeChange(event.target.value)}
+                        />
+                        <span>people</span>
+                      </div>
+                      <span className="queue-auto-advance-setting-copy">
+                        Sets how many attendees are included when the next group starts. Current groups stay unchanged.
                       </span>
                     </div>
                     <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">

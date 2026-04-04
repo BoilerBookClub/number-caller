@@ -41,7 +41,7 @@ import useDiscordLogin from "./useDiscordLogin";
 
 const defaultQrUrl =
   "https://www.boilerbookclub.com/announcements/";
-const QUEUE_SIZE = 10;
+const DEFAULT_GROUP_SIZE = 10;
 
 const initialState = {
   title: "BOILER BOOK CLUB EVENT",
@@ -50,12 +50,13 @@ const initialState = {
   autoAdvanceEnabled: false,
   autoAdvanceBacklogLimitEnabled: false,
   autoAdvanceBacklogLimit: 10,
-  autoAdvanceFinalCall: true,
+  autoAdvanceFinalCall: false,
   autoAdvanceFinalCallTimerEnabled: false,
   autoAdvanceFinalCallTimerMinutes: 5,
   autoAdvanceNextGroup: true,
-  autoAdvanceStartRound: true,
+  autoAdvanceStartRound: false,
   autoAdvanceThresholdPercent: 80,
+  groupSize: DEFAULT_GROUP_SIZE,
   memberCheckInLeadMinutes: 15,
   current: 0,
   groupStartedAt: null,
@@ -114,6 +115,16 @@ const normalizeAutoAdvanceBacklogLimit = (value) => {
   return parsedValue;
 };
 
+const normalizeGroupSize = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 500) {
+    return initialState.groupSize;
+  }
+
+  return parsedValue;
+};
+
 const normalizeNonNegativeInteger = (value, fallbackValue) => {
   const parsedValue = Number.parseInt(value, 10);
 
@@ -138,6 +149,7 @@ const normalizeState = (nextState) => {
   const normalizedBacklogLimit = normalizeAutoAdvanceBacklogLimit(
     mergedState.autoAdvanceBacklogLimit,
   );
+  const normalizedGroupSize = normalizeGroupSize(mergedState.groupSize);
 
   return {
     ...mergedState,
@@ -168,6 +180,7 @@ const normalizeState = (nextState) => {
         ? mergedState.autoAdvanceStartRound
         : initialState.autoAdvanceStartRound,
     autoAdvanceThresholdPercent: normalizedThreshold,
+      groupSize: normalizedGroupSize,
     current: normalizeNonNegativeInteger(mergedState.current, initialState.current),
     last: normalizeNonNegativeInteger(mergedState.last, initialState.last),
     round: normalizeNonNegativeInteger(mergedState.round, initialState.round),
@@ -691,6 +704,7 @@ function App() {
   const autoAdvanceFinalCallTimerMinutes = normalizeAutoAdvanceTimerMinutes(
     liveState.autoAdvanceFinalCallTimerMinutes,
   );
+  const groupSize = normalizeGroupSize(liveState.groupSize);
   const autoAdvanceFinalCallTimerMs = autoAdvanceFinalCallTimerMinutes * 60 * 1000;
   const queueTitle = liveState.finalCall
     ? "Final Call"
@@ -1665,14 +1679,22 @@ function App() {
     const groupStartedAt = Date.now();
     persistState({
       ...liveState,
-      current: QUEUE_SIZE,
+      current: groupSize,
       finalCall: false,
       finalCallTargetClaimIds: [],
       groupStartedAt,
       last: 0,
       round: nextRound ? liveState.round + 1 : liveState.round,
     });
-  }, [liveState, persistState, totalPeopleWithNumbers]);
+  }, [groupSize, liveState, persistState, totalPeopleWithNumbers]);
+
+  const updateGroupSize = useCallback((value) => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      groupSize: normalizeGroupSize(value),
+    });
+  }, [liveState, persistState]);
 
   const updateAutoAdvanceThresholdPercent = useCallback((value) => {
     setControlMessage("");
@@ -1836,7 +1858,7 @@ function App() {
       return;
     }
 
-    increment(QUEUE_SIZE);
+    increment(groupSize);
   }, [
     activeQueueClaimedCount,
     activeQueueClaims.length,
@@ -1849,6 +1871,7 @@ function App() {
     currentRound,
     currentTime,
     finalCallTargetClaimIdsKey,
+    groupSize,
     increment,
     current,
     isFinalCall,
@@ -2062,6 +2085,7 @@ function App() {
         autoAdvanceFinalCallTimerMinutes={autoAdvanceFinalCallTimerMinutes}
         autoAdvanceNextGroup={Boolean(liveState.autoAdvanceNextGroup)}
         autoAdvanceStartRound={Boolean(liveState.autoAdvanceStartRound)}
+        groupSize={groupSize}
         backlogClaims={backlogClaims}
         controlForm={controlForm}
         controlMessage={controlMessage}
@@ -2090,6 +2114,7 @@ function App() {
           setScannerActive(true);
         }}
         onAutoAdvanceBacklogLimitChange={updateAutoAdvanceBacklogLimit}
+        onGroupSizeChange={updateGroupSize}
         onAutoAdvanceTimerMinutesChange={updateAutoAdvanceTimerMinutes}
         onAutoAdvanceThresholdChange={updateAutoAdvanceThresholdPercent}
         onSaveEventDetails={handleSaveEventDetails}
