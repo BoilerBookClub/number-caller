@@ -55,7 +55,7 @@ const initialState = {
   autoAdvanceFinalCallTimerMinutes: 5,
   autoAdvanceNextGroup: true,
   autoAdvanceStartRound: true,
-  autoAdvanceThresholdPercent: 0,
+  autoAdvanceThresholdPercent: 80,
   memberCheckInLeadMinutes: 15,
   current: 0,
   groupStartedAt: null,
@@ -114,6 +114,16 @@ const normalizeAutoAdvanceBacklogLimit = (value) => {
   return parsedValue;
 };
 
+const normalizeNonNegativeInteger = (value, fallbackValue) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return fallbackValue;
+  }
+
+  return parsedValue;
+};
+
 const normalizeState = (nextState) => {
   const mergedState = {
     ...initialState,
@@ -158,6 +168,9 @@ const normalizeState = (nextState) => {
         ? mergedState.autoAdvanceStartRound
         : initialState.autoAdvanceStartRound,
     autoAdvanceThresholdPercent: normalizedThreshold,
+    current: normalizeNonNegativeInteger(mergedState.current, initialState.current),
+    last: normalizeNonNegativeInteger(mergedState.last, initialState.last),
+    round: normalizeNonNegativeInteger(mergedState.round, initialState.round),
   };
 };
 
@@ -232,10 +245,10 @@ const buildClaimResultFromRecord = (claimRecord) => {
     claimId: claimRecord.claimId,
     existing: true,
     isMember: claimRecord.isMember ?? false,
-    itemsClaimedCount: claimRecord.itemsClaimedCount ?? 0,
-    number: claimRecord.number ?? 0,
+    itemsClaimedCount: normalizeNonNegativeInteger(claimRecord.itemsClaimedCount, 0),
+    number: normalizeNonNegativeInteger(claimRecord.number, 0),
     qrToken: claimRecord.qrToken ?? "",
-    redeemedRound: claimRecord.redeemedRound ?? 0,
+    redeemedRound: normalizeNonNegativeInteger(claimRecord.redeemedRound, 0),
   };
 };
 
@@ -260,11 +273,11 @@ const normalizeRosterClaim = (nextClaim, userProfilesByUserId) => {
     eventId: nextClaim.eventId ?? null,
     isMember: nextClaim.isMember ?? false,
     itemClaimedAtMsHistory: getTimestampMsList(nextClaim.itemClaimedAtMsHistory),
-    itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
-    number: nextClaim.number ?? 0,
+    itemsClaimedCount: normalizeNonNegativeInteger(nextClaim.itemsClaimedCount, 0),
+    number: normalizeNonNegativeInteger(nextClaim.number, 0),
     participantType: nextClaim.participantType ?? "discord",
     redeemedAtMs: getTimestampMs(nextClaim.redeemedAt),
-    redeemedRound: nextClaim.redeemedRound ?? 0,
+    redeemedRound: normalizeNonNegativeInteger(nextClaim.redeemedRound, 0),
   };
 };
 
