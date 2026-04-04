@@ -9,7 +9,6 @@ import DisplayPage from "./components/DisplayPage";
 import {
   ClaimAccessGatePage,
   ClosedEventPage,
-  ControlAccessDenied,
 } from "./components/EntryPages";
 import {
   buildClaimAccessCode,
@@ -733,6 +732,14 @@ function App() {
     );
   }, []);
 
+  useEffect(() => {
+    if (mode !== "control" || isCheckingAccess || hasFullAccess) {
+      return;
+    }
+
+    changeMode(null, { replace: true });
+  }, [changeMode, hasFullAccess, isCheckingAccess, mode]);
+
   const openDisplayScreen = () => {
     window.open(displayUrl, "_blank", "noopener,noreferrer");
   };
@@ -1144,18 +1151,14 @@ function App() {
   }, [isAttendeeEventLive, liveState.title]);
 
   useEffect(() => {
-    if (isEventLive) {
+    if (isEventLive || mode === "control") {
       return;
     }
 
-    if (loggedIn) {
-      handleLogout();
-    }
-
-    if (mode === "control") {
+    if (mode === "display") {
       changeMode(null, { replace: true });
     }
-  }, [changeMode, handleLogout, isEventLive, loggedIn, mode]);
+  }, [changeMode, isEventLive, mode]);
 
   useEffect(() => {
     if (!attendeeClaimId) {
@@ -1928,7 +1931,6 @@ function App() {
         ),
         timeframeStart: controlForm.timeframeStart,
       });
-      setControlMessage("Event started.");
       setIsEventDetailsModalOpen(false);
     } catch (error) {
       setControlMessage(error.message || "Unable to start the event.");
@@ -2036,15 +2038,9 @@ function App() {
 
     if (!hasFullAccess) {
       return (
-        <ControlAccessDenied
-          authError={authError}
-          handleLogout={handleLogout}
-          hasFullAccess={hasFullAccess}
-          isCheckingAccess={isCheckingAccess}
-          loggedIn={loggedIn}
-          onMainPage={() => changeMode(null)}
-          onStartOAuthGrant={startOAuthGrant}
-        />
+        <div className="mode-select">
+          <h2>Returning to main page...</h2>
+        </div>
       );
     }
 
@@ -2109,11 +2105,12 @@ function App() {
       <ClosedEventPage
         authError={authError}
         endedEventTitle={mode === null ? endedEventTitle : ""}
+        handleLogout={handleLogout}
         hasFullAccess={hasFullAccess}
         isCheckingAccess={isCheckingAccess}
         loggedIn={loggedIn}
         onOpenControl={() => changeMode("control")}
-        onStartOAuthGrant={startOAuthGrant}
+        onStartOAuthGrant={() => startOAuthGrant("/control")}
       />
     );
   }
@@ -2123,13 +2120,14 @@ function App() {
       <ClaimAccessGatePage
         authError={authError}
         claimAccessStatus={claimAccessStatus}
+        handleLogout={handleLogout}
         hasFullAccess={hasFullAccess}
         isCheckingAccess={isCheckingAccess}
         liveEvent={liveEvent}
         liveState={liveState}
         loggedIn={loggedIn}
         onOpenControl={() => changeMode("control")}
-        onStartOAuthGrant={startOAuthGrant}
+        onStartOAuthGrant={() => startOAuthGrant("/control")}
       />
     );
   }

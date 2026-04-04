@@ -972,7 +972,7 @@ function ControlPage({
   const queueEmptyText = liveState.finalCall
     ? "Everyone from the final-call list has claimed an item."
     : liveState.current === 0
-      ? "No group is active yet."
+      ? ""
       : "No attendees are in the current group.";
   const isCurrentGroupFullyClaimed =
     !liveState.finalCall &&
@@ -1317,16 +1317,20 @@ function ControlPage({
                     isFinalCall={liveState.finalCall}
                     isLastGroup={isLastGroup}
                   />
-                  <div className="queue-backlog-toggle-wrap">
-                    <button
-                      className="secondary-button queue-backlog-toggle"
-                      type="button"
-                      onClick={() => setIsBacklogOpen((currentValue) => !currentValue)}
-                    >
-                      {isBacklogOpen ? "Hide" : "Show"} Backlog ({backlogClaims.length})
-                    </button>
-                  </div>
-                  {isBacklogOpen ? <BacklogList claims={backlogClaims} /> : null}
+                  {backlogClaims.length > 0 ? (
+                    <>
+                      <div className="queue-backlog-toggle-wrap">
+                        <button
+                          className="secondary-button queue-backlog-toggle"
+                          type="button"
+                          onClick={() => setIsBacklogOpen((currentValue) => !currentValue)}
+                        >
+                          {isBacklogOpen ? "Hide" : "Show"} Backlog ({backlogClaims.length})
+                        </button>
+                      </div>
+                      {isBacklogOpen ? <BacklogList claims={backlogClaims} /> : null}
+                    </>
+                  ) : null}
                 </>
               )}
             </div>

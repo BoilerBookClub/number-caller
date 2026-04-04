@@ -44,6 +44,7 @@ function ControlAccessDenied({
 function ClosedEventPage({
   authError,
   endedEventTitle,
+  handleLogout,
   hasFullAccess,
   isCheckingAccess,
   loggedIn,
@@ -64,13 +65,18 @@ function ClosedEventPage({
           <span>Event Staff Login</span>
         </h2>
         <div className="entry-staff-action">
-          {!loggedIn || !hasFullAccess ? (
+          {!loggedIn ? (
             <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
               {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
             </button>
           ) : null}
           {loggedIn && hasFullAccess && !isCheckingAccess ? (
             <button onClick={onOpenControl}>Open Control Panel</button>
+          ) : null}
+          {loggedIn && !hasFullAccess && !isCheckingAccess ? (
+            <button className="secondary-button" onClick={handleLogout}>
+              Logout
+            </button>
           ) : null}
         </div>
         {loggedIn && !hasFullAccess && !isCheckingAccess ? (
@@ -87,6 +93,7 @@ function ClosedEventPage({
 function ClaimAccessGatePage({
   authError,
   claimAccessStatus,
+  handleLogout,
   hasFullAccess,
   isCheckingAccess,
   liveEvent,
@@ -102,13 +109,23 @@ function ClaimAccessGatePage({
         <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
         {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
         <h2>Staff Login</h2>
-        {!loggedIn || !hasFullAccess ? (
+        {!loggedIn ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
           </button>
         ) : null}
         {loggedIn && hasFullAccess && !isCheckingAccess ? (
           <button onClick={onOpenControl}>Open Control Panel</button>
+        ) : null}
+        {loggedIn && !hasFullAccess && !isCheckingAccess ? (
+          <button className="secondary-button" onClick={handleLogout}>
+            Logout
+          </button>
+        ) : null}
+        {loggedIn && !hasFullAccess && !isCheckingAccess ? (
+          <p className="entry-message">
+            This login is not on the staff allowlist.
+          </p>
         ) : null}
         {claimAccessStatus ? <p className="entry-message">{claimAccessStatus}</p> : null}
         {authError ? <p className="entry-message">{authError}</p> : null}

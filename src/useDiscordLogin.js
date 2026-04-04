@@ -39,6 +39,38 @@ const clearStoredSession = () => {
   localStorage.removeItem("loginTime");
 };
 
+const readStoredSession = () => {
+  const storedUser = localStorage.getItem("discordUser");
+  const storedUsername = localStorage.getItem("discordUsername");
+  const storedToken = localStorage.getItem("accessToken");
+  const loginTime = Number(localStorage.getItem("loginTime"));
+  const sessionExpired =
+    !storedToken ||
+    !loginTime ||
+    Date.now() - loginTime > SESSION_EXPIRATION_TIME;
+
+  return {
+    accessToken: sessionExpired ? "" : storedToken,
+    sessionExpired,
+    user: sessionExpired ? "" : storedUser || "",
+    username: sessionExpired ? "" : storedUsername || storedUser || "",
+  };
+};
+
+const fetchDiscordUser = async (token) => {
+  const response = await fetch("https://discord.com/api/users/@me", {
+    headers: {
+      authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Discord login failed.");
+  }
+
+  return response.json();
+};
+
 const persistDiscordUser = async (userData) => {
   if (!db) {
     return;
@@ -76,9 +108,10 @@ const persistDiscordUser = async (userData) => {
 };
 
 export default function useDiscordLogin() {
-  const [user, setUser] = useState("");
-  const [username, setUsername] = useState("");
-  const [accessToken, setAccessToken] = useState("");
+  const initialSession = readStoredSession();
+  const [user, setUser] = useState(initialSession.user);
+  const [username, setUsername] = useState(initialSession.username);
+  const [accessToken, setAccessToken] = useState(initialSession.accessToken);
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
   const [accessResolved, setAccessResolved] = useState(false);
@@ -87,73 +120,59 @@ export default function useDiscordLogin() {
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("discordUser");
-    const storedUsername = localStorage.getItem("discordUsername");
-    const storedToken = localStorage.getItem("accessToken");
-    const loginTime = Number(localStorage.getItem("loginTime"));
-    const sessionExpired =
-      !storedUser ||
-      !storedToken ||
-      !loginTime ||
-      Date.now() - loginTime > SESSION_EXPIRATION_TIME;
+    const storedSession = readStoredSession();
+    const { accessToken: storedAccessToken, sessionExpired } = storedSession;
 
     if (sessionExpired) {
       clearStoredSession();
-    } else {
-      setUser(storedUser);
-      setUsername(storedUsername || storedUser);
-      setAccessToken(storedToken);
     }
 
     const params = new URLSearchParams(window.location.hash.slice(1));
     const token = params.get("access_token");
     const returnPath =
       readPostLoginPath() ?? normalizeReturnPath(params.get("state"));
+    const tokenToUse = token || storedAccessToken;
 
-    if (!token || (!sessionExpired && storedToken)) {
+    if (!tokenToUse) {
       setLoading(false);
       return;
     }
 
-    localStorage.setItem("accessToken", token);
-    localStorage.setItem("loginTime", Date.now().toString());
-    window.history.replaceState(
-      {},
-      document.title,
-      returnPath,
-    );
+    if (token) {
+      localStorage.setItem("accessToken", token);
+      localStorage.setItem("loginTime", Date.now().toString());
+      setAccessToken(token);
+      window.history.replaceState(
+        {},
+        document.title,
+        returnPath,
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }
 
-    fetch("https://discord.com/api/users/@me", {
-      headers: {
-        authorization: `Bearer ${token}`,
-      },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Discord login failed.");
-        }
-
-        return response.json();
-      })
+    fetchDiscordUser(tokenToUse)
       .then(async (userData) => {
         setUser(userData.id);
         setUsername(userData.username || userData.id);
-        setAccessToken(token);
+        setAccessToken(tokenToUse);
         localStorage.setItem("discordUser", userData.id);
         localStorage.setItem("discordUsername", userData.username || userData.id);
+        localStorage.setItem("accessToken", tokenToUse);
+        localStorage.setItem("loginTime", Date.now().toString());
         await persistDiscordUser(userData);
         setAuthError("");
       })
       .catch((error) => {
         clearStoredSession();
         setUser("");
+        setUsername("");
         setAccessToken("");
         setAuthError(error.message || "Unable to log in with Discord.");
       })
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [initialSession.accessToken]);
 
   useEffect(() => {
     if (!user || !accessToken) {
@@ -230,14 +249,17 @@ export default function useDiscordLogin() {
     };
 
     checkUserRole();
-  }, [user, accessToken]);
+  }, [accessToken, user]);
 
-  const startOAuthGrant = () => {
+  const startOAuthGrant = (returnPath) => {
     const redirectUri = encodeURIComponent(buildDiscordRedirectUri());
+    const normalizedReturnPath = normalizeReturnPath(
+      returnPath ?? `${window.location.pathname}${window.location.search}`,
+    );
 
     window.sessionStorage.setItem(
       POST_LOGIN_PATH_KEY,
-      `${window.location.pathname}${window.location.search}`,
+      normalizedReturnPath,
     );
 
     window.open(
