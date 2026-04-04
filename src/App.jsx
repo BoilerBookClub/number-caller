@@ -1429,8 +1429,8 @@ function App() {
         setScanFeedback({
           tone: result.alreadyRedeemed ? "info" : "success",
           message: result.alreadyRedeemed
-            ? `Number ${result.number} already claimed an item in round ${result.round}.`
-            : `Marked number ${result.number} as claimed for round ${result.round}.`,
+            ? `${result.number} already claimed an item in round ${result.round}`
+            : `Marked ${result.number} as claimed for round ${result.round}`,
         });
       } catch (error) {
         setScanFeedback({
@@ -2054,7 +2054,12 @@ function App() {
     );
   }
 
-  if (!isAttendeeEventLive && !effectiveClaimResult && !hasManualStaffClaimAccess) {
+  // If event is not live, and user is not up or has already claimed, show closed event page
+  if (
+    !isAttendeeEventLive &&
+    (!effectiveClaimResult || hasClaimedCurrentRound || !showClaimQr) &&
+    !hasManualStaffClaimAccess
+  ) {
     return (
       <ClosedEventPage
         authError={authError}

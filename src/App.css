@@ -790,8 +790,6 @@ body.modal-scroll-locked {
   background: #ffffff;
   color: #111111;
   box-shadow: none;
-  appearance: textfield;
-  -webkit-appearance: none;
 }
 
 .queue-auto-advance-inline-control select {
@@ -800,8 +798,6 @@ body.modal-scroll-locked {
 
 .queue-auto-advance-inline-control input::-webkit-outer-spin-button,
 .queue-auto-advance-inline-control input::-webkit-inner-spin-button {
-  margin: 0;
-  -webkit-appearance: none;
 }
 
 .queue-auto-advance-inline-control span {
