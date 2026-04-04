@@ -1394,10 +1394,6 @@ function ControlPage({
             <img src={scanIcon} alt="" className="button-icon" />
             <span>Open Scanner</span>
           </button>
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenSelfClaim}>
-            <img src={numberIcon} alt="" className="button-icon" />
-            <span>{hasPersonalClaim ? "My Number" : "Get My Number"}</span>
-          </button>
           <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
             <img src={displayIcon} alt="" className="button-icon" />
             <span>Open Display</span>
