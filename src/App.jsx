@@ -2126,6 +2126,10 @@ function App() {
       onToggleClaimNotifications={toggleClaimNotifications}
       showControlNavbar={hasTrustedStaffAccess}
       showClaimQr={showClaimQr}
+      hasTrustedStaffAccess={hasTrustedStaffAccess}
+      setScannerActive={setScannerActive}
+      setScanFeedback={setScanFeedback}
+      changeMode={changeMode}
     />
   );
 }

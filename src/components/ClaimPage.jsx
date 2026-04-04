@@ -19,7 +19,6 @@ function ClaimRulesModal({
           <h2>Welcome to {liveState.title}!</h2>
           <div className="claim-rules-copy">
             <ol>
-                <li>You will be assigned a number sequentially based on when you arrived.</li>
                 <li>When your number is called, you can come up and claim one item.</li>
                 <li>Before your number is called, read the book descriptions, which are linked below your
               number, so you know what you&apos;d like to grab.</li>
@@ -219,7 +218,21 @@ function ClaimPage(props) {
     onOpenControlPanel,
     onOpenDisplayScreen,
     showControlNavbar,
+    hasTrustedStaffAccess,
+    setScannerActive,
+    setScanFeedback,
+    changeMode,
   } = props;
+
+  const handleOpenScanner = () => {
+    if (hasTrustedStaffAccess && setScannerActive && setScanFeedback && changeMode) {
+      setScanFeedback(null);
+      changeMode("control");
+      setTimeout(() => setScannerActive(true), 0);
+    } else if (onOpenClaimScanner) {
+      onOpenClaimScanner();
+    }
+  };
 
   return (
     <div className="claim-page claim-page--focused">
@@ -232,7 +245,7 @@ function ClaimPage(props) {
       {claimResult && isClaimRulesOpen ? <ClaimRulesModal {...props} /> : null}
       {showControlNavbar ? (
         <div className="bottom-navbar">
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenClaimScanner}>
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
             <img src={scanIcon} alt="" className="button-icon" />
             <span>Open Scanner</span>
           </button>
