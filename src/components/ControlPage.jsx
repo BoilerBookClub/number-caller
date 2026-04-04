@@ -5,7 +5,6 @@ import editIcon from "../assets/edit.svg";
 import expandIcon from "../assets/expand.svg";
 import graphIcon from "../assets/graph.svg";
 import groupIcon from "../assets/group.svg";
-import numberIcon from "../assets/number.svg";
 import scanIcon from "../assets/scan.svg";
 import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
@@ -936,7 +935,7 @@ function ControlPage({
   controlSaving,
   currentEventClaims,
   currentRound,
-  hasPersonalClaim,
+  
   isEventDetailsModalOpen,
   isEventLive,
   isLastGroup,
@@ -955,7 +954,7 @@ function ControlPage({
   onOpenDisplayScreen,
   onOpenEventDetails,
   onOpenScanner,
-  onOpenSelfClaim,
+  
   onCloseScanner,
   onNewRound,
   onGroupSizeChange,
