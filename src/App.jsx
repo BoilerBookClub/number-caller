@@ -1988,8 +1988,9 @@ function App() {
 
     try {
       await closeLiveEvent({ state: initialState });
-      setControlMessage("Event closed.");
-      changeMode(null);
+      setControlMessage("");
+      handleLogout();
+      changeMode(null, { replace: true });
     } catch (error) {
       setControlMessage(error.message || "Unable to close the event.");
     } finally {

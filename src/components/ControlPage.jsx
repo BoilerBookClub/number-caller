@@ -184,7 +184,7 @@ function EventDetailsModal({
                 type="text"
                 value={controlForm.title}
                 onChange={onFieldChange("title")}
-                placeholder="Event Name Here."
+                placeholder="Event Name Here..."
                 autoComplete="off"
               />
             </label>
