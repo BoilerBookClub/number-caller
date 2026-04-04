@@ -55,8 +55,10 @@ function ClosedEventPage({
     <div className="entry-screen">
       {endedEventTitle ? (
         <div className="entry-card hero-card">
-          <p className="eyebrow">Event Complete</p>
-          <h1>Thanks for coming to {endedEventTitle}!!!</h1>
+            <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+          <p className="eyebrow">The Event Has Ended</p>
+          <h1>Thanks for coming to {endedEventTitle}!</h1>
+          <p className="eyebrow">See you again soon ;)</p>
         </div>
       ) : null}
       {!endedEventTitle ? (
