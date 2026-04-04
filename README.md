@@ -1,6 +1,6 @@
 # Event Pass
 
-Event Pass is a real-time event management web app designed for events like book giveaways, raffles, or any scenario where participants are called up in a randomized or sequential order. It provides a seamless experience for both organizers and attendees, with live updates and QR code-based claiming.
+Event Pass is a real-time event management web app designed for events like book giveaways, raffles, or any scenario where participants are called up in a sequential order. It provides a seamless experience for both organizers and attendees, with live updates and QR code-based claiming.
 
 ## Key Features
 
@@ -9,7 +9,7 @@ Event Pass is a real-time event management web app designed for events like book
 - **Attendee Claim Page**: Each participant can view their number, see when they are called, and claim their item by showing a QR code for staff to scan.
 - **QR Code Verification**: Staff can scan attendee QR codes to confirm claims and prevent duplicates.
 - **Firebase Integration**: Uses Firestore for real-time data sync and Firebase Hosting for easy deployment.
-- **Discord OAuth (optional)**: Supports Discord login for attendee authentication.
+- **Discord OAuth**: Supports Discord login for attendee authentication.
 
 ## How It Works
 
