@@ -12,7 +12,7 @@ function ControlAccessDenied({
 }) {
   return (
     <div className="entry-screen">
-      <div className="entry-card">
+      <div className="entry-card-centered">
         <h2>Control Panel Access</h2>
         <p>Only Discord users with the special role can access the control panel.</p>
         {!loggedIn ? (
@@ -32,7 +32,7 @@ function ControlAccessDenied({
           </p>
         ) : null}
       </div>
-      <div className="entry-card">
+      <div className="entry-card-centered">
         <h2>Return to Sign Up</h2>
         <p>Go back to the attendee page.</p>
         <button onClick={onMainPage}>Main Page</button>
@@ -62,7 +62,7 @@ function ClosedEventPage({
         </div>
       ) : null}
       {!endedEventTitle ? (
-        <div className="entry-card">
+        <div className="entry-card-centered">
           <h2 className="entry-heading-with-logo">
             <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
             <span>Event Staff Login</span>
@@ -108,11 +108,18 @@ function ClaimAccessGatePage({
 }) {
   return (
     <div className="entry-screen">
-      <div className="entry-card hero-card">
+      <div className="entry-card-centered hero-card">
         <p className="eyebrow">Live Event</p>
+        {liveEvent.timeframeLabel ? <p style={{ marginBottom: "0rem" }}>{liveEvent.timeframeLabel}</p> : null}
         <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
-        {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-        <h2>Staff Login</h2>
+        {claimAccessStatus ? <p className="entry-message">{claimAccessStatus}</p> : null}
+        {authError ? <p className="entry-message">{authError}</p> : null}
+      </div>
+        <div className="entry-card-centered-login">
+        <h2 className="entry-heading-with-logo">
+            <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+            <span>Event Staff Login</span>
+        </h2>
         {!loggedIn ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
@@ -131,9 +138,7 @@ function ClaimAccessGatePage({
             This login is not on the staff allowlist.
           </p>
         ) : null}
-        {claimAccessStatus ? <p className="entry-message">{claimAccessStatus}</p> : null}
-        {authError ? <p className="entry-message">{authError}</p> : null}
-      </div>
+        </div>
     </div>
   );
 }

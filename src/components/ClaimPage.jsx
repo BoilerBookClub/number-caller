@@ -6,6 +6,8 @@ import notificationIcon from "../assets/notification.svg";
 import scanIcon from "../assets/scan.svg";
 import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName } from "../titleFonts";
+import { assignPreclaimIfQueued, readPreclaimForUser } from "../firebase";
+import { useState } from "react";
 
 function ClaimRulesModal({
   liveState,
@@ -145,6 +147,7 @@ function MemberClaimCard({
   isClaimWindowOpen,
   isEventStarted,
   isMember,
+  hasTrustedStaffAccess,
   liveEvent,
   liveState,
   loggedIn,
@@ -152,18 +155,16 @@ function MemberClaimCard({
   memberEarlyAccessTime,
   onManualClaim,
   onLogout,
+  onRefreshMembership,
   onStartOAuthGrant,
+  membershipRefreshPrompt,
 }) {
   return (
     <div className="entry-card claim-modal-card">
       <p className="eyebrow">Live Event</p>
+      {liveEvent.timeframeLabel ? <p style={{ margin: 0 }}>{liveEvent.timeframeLabel}</p> : null}
       <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
-      {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
-      <h2>Claim Your Number</h2>
       <p>
-        {allowManualClaim
-          ? "Log in with Discord, then click Give Me a Number when you're ready."
-          : "Log in with Discord and we'll assign your number automatically."}
       </p>
       {!loggedIn ? (
         <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
@@ -174,38 +175,54 @@ function MemberClaimCard({
       {loggedIn && !isCheckingAccess && authError ? <p className="entry-message">{authError}</p> : null}
       {loggedIn && claimLoading ? <p>Assigning your number...</p> : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && !isClaimWindowOpen ? (
-        <p>
-          {isMember && memberEarlyAccessTime
-            ? `Logged in. Because you have the member role, you can claim starting at ${memberEarlyAccessLabel}.`
-            : `Logged in. You need to wait for the event to start at ${eventStartLabel}.`}
-        </p>
+        <>
+          <h2>Logged in</h2>
+          <p>
+            {isMember && memberEarlyAccessTime
+              ? `Thanks for being a member! You can claim your number early starting at ${memberEarlyAccessLabel}.`
+              : `You'll need to wait for the event to start at ${eventStartLabel} to get your number.`}
+          </p>
+        </>
       ) : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult ? (
-        <p>
-          {allowManualClaim
-            ? isMember
-              ? isEventStarted
-                ? "Logged in with the member role. Click Give Me a Number when you want to join the line."
-                : "Logged in with the member role. Early claim access is open, so you can click Give Me a Number whenever you're ready."
-              : "Logged in. The event has started, so you can click Give Me a Number whenever you're ready."
+        <>
+          <h2>Logged in</h2>
+          <p>
+            {allowManualClaim
+              ? isMember
+                ? isEventStarted
+                  ? "Thanks for being a member. Click Give Me a Number when you want to join the line."
+                : "Thanks for being a member. Early claim access is open, so you can click Give Me a Number whenever you're ready."
+              : "The event has started, so you can click Give Me a Number whenever you're ready."
             : isMember
               ? isEventStarted
-                ? "Logged in with the member role. Your claim will be assigned automatically."
-                : "Logged in with the member role. Early claim access is open, so your claim will be assigned automatically."
-              : "Logged in. The event has started, so your claim will be assigned automatically."}
+                ? "Thanks for being a member. Your claim will be assigned automatically."
+                : "Thanks for being a member. Early claim access is open, so your claim will be assigned automatically."
+              : "The event has started, so your claim will be assigned automatically."}
         </p>
+        </>
       ) : null}
-      {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult && allowManualClaim ? (
+      {loggedIn && !isCheckingAccess && !claimLoading && !authError && !claimResult && allowManualClaim ? (
         <button type="button" onClick={onManualClaim}>
           Give Me a Number
         </button>
       ) : null}
-      {claimError ? <p className="entry-message">{claimError}</p> : null}
-      {loggedIn ? (
-        <button className="secondary-button" onClick={onLogout}>
-          Logout
-        </button>
+      {loggedIn && !isCheckingAccess && !claimLoading && !authError && !isClaimWindowOpen && !hasTrustedStaffAccess ? (
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={onRefreshMembership}>
+            Refresh membership
+          </button>
+          {membershipRefreshPrompt ? (
+            <div style={{ marginTop: 8 }} className="entry-message">
+              Refresh failed — please re-login with Discord to continue.
+              <div style={{ marginTop: 6 }}>
+                <button type="button" onClick={onStartOAuthGrant}>Re-login with Discord</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : null}
+      {claimError ? <p className="entry-message">{claimError}</p> : null}
     </div>
   );
 }
@@ -264,3 +281,5 @@ function ClaimPage(props) {
 }
 
 export default ClaimPage;
+
+// Debug preclaim controls removed

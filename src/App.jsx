@@ -13,6 +13,7 @@ import {
   createClaimAccessSecret,
   isValidClaimAccessCode,
 } from "./claimAccess";
+  import { enqueuePreclaim } from "./firebase";
 import { buildClaimQrPayload, parseClaimQrPayload } from "./claimQr";
 import {
   claimEventNumber,
@@ -29,6 +30,10 @@ import {
   subscribeToDisplayFeed,
   subscribeToLiveEvent,
   updateLiveEventDetails,
+  assignPreclaimIfQueued,
+  readPreclaimOnce,
+  updatePreclaimMembership,
+  signInWithDiscordAccessToken,
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
@@ -580,6 +585,7 @@ function App() {
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
+  const [membershipRefreshPrompt, setMembershipRefreshPrompt] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
   const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState(false);
@@ -1261,7 +1267,52 @@ function App() {
       eventId: liveEvent.eventId,
       userId: user,
     });
-  }, [claimAccessGranted, liveEvent.eventId, loggedIn, user]);
+
+    // If the user has claim access but the claim window isn't open yet,
+    // enqueue them into the pre-claim queue so they'll be assigned automatically
+    // when the event opens.
+    (async () => {
+      try {
+        if (
+          loggedIn &&
+          claimAccessGranted &&
+          liveEvent.eventId &&
+          !isClaimWindowOpen &&
+          user &&
+          !attendeeClaimId
+        ) {
+          await enqueuePreclaim({
+            claimKey: `discord:${user}`,
+            avatarUrl,
+            discordUserId: user,
+            displayName: username || user,
+            eventId: liveEvent.eventId,
+            isMember,
+            memberEligibleAt: memberEarlyAccessTime ? memberEarlyAccessTime.getTime() : null,
+            participantType: "discord",
+          });
+        }
+      } catch (e) {
+        // Non-fatal: continue without blocking the UI
+        // eslint-disable-next-line no-console
+        console.warn("enqueuePreclaim failed:", e?.message || e);
+      }
+    })();
+  }, [
+    claimAccessGranted,
+    liveEvent.eventId,
+    loggedIn,
+    user,
+    isClaimWindowOpen,
+    attendeeClaimId,
+    avatarUrl,
+    username,
+    isMember,
+  ]);
+
+  
+
+  
 
   const assignDiscordNumber = useCallback(async () => {
     if (
@@ -1277,7 +1328,7 @@ function App() {
     setClaimLoading(true);
 
     try {
-      const result = await claimEventNumber({
+      const params = {
         claimKey: `discord:${user}`,
         avatarUrl,
         discordUserId: user,
@@ -1285,12 +1336,23 @@ function App() {
         eventId: liveEvent.eventId,
         isMember,
         participantType: "discord",
-      });
+      };
+
+      // Debug: log intent and params
+      // eslint-disable-next-line no-console
+      console.debug("assignDiscordNumber: calling claimEventNumber", params);
+
+      const result = await claimEventNumber(params);
+
+      // eslint-disable-next-line no-console
+      console.debug("assignDiscordNumber: success", result);
 
       setClaimResult(result);
       setClaimError("");
       setIsStaffSelfClaimMode(false);
     } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("assignDiscordNumber: failed", error && (error.message || error));
       setClaimError(error.message || "Unable to assign a number right now.");
     } finally {
       setClaimLoading(false);
@@ -1304,6 +1366,103 @@ function App() {
     loggedIn,
     user,
     username,
+  ]);
+
+  const handleStaffManualClaim = useCallback(async () => {
+    if (!liveEvent.eventId || !loggedIn || !user) return;
+    const proceed = window.confirm("Give yourself a number now? This will assign you a number immediately.");
+
+    if (!proceed) return;
+
+    setClaimLoading(true);
+
+    try {
+      const params = {
+        claimKey: `discord:${user}`,
+        avatarUrl: avatarUrl ?? "",
+        discordUserId: user,
+        displayName: username || user,
+        eventId: liveEvent.eventId,
+        isMember: isMember ?? false,
+        participantType: "discord",
+      };
+
+      // eslint-disable-next-line no-console
+      console.debug("handleStaffManualClaim: calling claimEventNumber", params);
+
+      const result = await claimEventNumber(params);
+
+      // eslint-disable-next-line no-console
+      console.debug("handleStaffManualClaim: claimEventNumber result", result);
+
+      setClaimResult(result);
+      setClaimError("");
+      setControlMessage("Assigned number.");
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("handleStaffManualClaim: assign failed", e && (e.message || e));
+      setControlMessage(e?.message || "Unable to assign number.");
+    } finally {
+      setClaimLoading(false);
+      setIsStaffSelfClaimMode(false);
+    }
+  }, [liveEvent.eventId, loggedIn, user, isMember, memberEarlyAccessTime, avatarUrl, username]);
+
+  const refreshMembershipAndUpdatePreclaim = useCallback(async () => {
+    if (!loggedIn || !user || !liveEvent.eventId) {
+      return;
+    }
+
+    // Try to reuse stored Discord access token if available
+    const storedAccessToken = window.localStorage.getItem("accessToken");
+
+    let profile = null;
+
+    if (storedAccessToken) {
+      try {
+        profile = await signInWithDiscordAccessToken({ accessToken: storedAccessToken });
+      } catch (e) {
+        // If the stored token is invalid or expired, do NOT auto-redirect.
+        // Instead, surface a re-auth prompt so the user can re-login explicitly.
+        // eslint-disable-next-line no-console
+        console.warn("refresh membership sign-in failed:", e?.message || e);
+        setMembershipRefreshPrompt(true);
+        return;
+      }
+    }
+
+    try {
+      const memberEligibleAt = profile.isMember && memberEarlyAccessTime
+        ? memberEarlyAccessTime.getTime()
+        : null;
+
+      await updatePreclaimMembership({
+        claimKey: `discord:${user}`,
+        eventId: liveEvent.eventId,
+        isMember: profile.isMember,
+        memberEligibleAt,
+        displayName: profile.username || username || user,
+        avatarUrl: profile.avatarUrl || avatarUrl,
+      });
+
+      // If claim window open, try to assign immediately
+      if (isClaimWindowOpen) {
+        void assignDiscordNumber();
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Unable to update preclaim membership:", e?.message || e);
+    }
+  }, [
+    loggedIn,
+    user,
+    liveEvent.eventId,
+    memberEarlyAccessTime,
+    startOAuthGrant,
+    username,
+    avatarUrl,
+    isClaimWindowOpen,
+    assignDiscordNumber,
   ]);
 
   useEffect(() => {
@@ -1531,7 +1690,6 @@ function App() {
     ) {
       return;
     }
-
     void assignDiscordNumber();
   }, [
     assignDiscordNumber,
@@ -1543,6 +1701,64 @@ function App() {
     isAttendeeEventLive,
     loggedIn,
     hasTrustedAttendeeAccess,
+  ]);
+
+  // Fallback: if the server-side preclaim processor didn't run for some reason,
+  // detect a preclaim and attempt to assign the claim client-side when the
+  // claim window opens.
+  useEffect(() => {
+    let cancelled = false;
+
+    const tryAssignFromPreclaim = async () => {
+      if (!loggedIn || !user || !liveEvent.eventId || claimRecord || claimLoading) {
+        return;
+      }
+
+      const claimKey = `discord:${user}`;
+
+      try {
+        // Ask the server to process this user's preclaim if it exists.
+        // eslint-disable-next-line no-console
+        console.debug("tryAssignFromPreclaim: calling assignPreclaimIfQueued", { eventId: liveEvent.eventId, claimKey });
+
+        const resp = await assignPreclaimIfQueued({
+          eventId: liveEvent.eventId,
+          claimKey,
+        });
+
+        // eslint-disable-next-line no-console
+        console.debug("tryAssignFromPreclaim: response", resp);
+
+        if (cancelled) return;
+
+        if (resp?.assigned) {
+          // Server created the claim; fetch/refresh client-side claim state.
+          // eslint-disable-next-line no-console
+          console.debug("tryAssignFromPreclaim: assigned true, calling assignDiscordNumber");
+          await assignDiscordNumber();
+        }
+      } catch (e) {
+        // If callable throws due to permission/other issues, log and continue.
+        // eslint-disable-next-line no-console
+        console.warn("preclaim-check failed:", e?.message || e);
+      }
+    };
+
+    if (isClaimWindowOpen) {
+      void tryAssignFromPreclaim();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isClaimWindowOpen,
+    loggedIn,
+    user,
+    liveEvent.eventId,
+    claimRecord,
+    claimLoading,
+    assignDiscordNumber,
   ]);
 
   const persistState = useCallback(async (newState) => {
@@ -1884,6 +2100,8 @@ function App() {
     }
   };
 
+  
+
   const handleSaveEventDetails = async (event) => {
     event.preventDefault();
     const timeframeError = validateTimeframe();
@@ -2117,7 +2335,7 @@ function App() {
       memberEarlyAccessTime={memberEarlyAccessTime}
       notificationPermission={notificationPermission}
       onAcknowledgeRules={acknowledgeClaimRules}
-      onManualClaim={assignDiscordNumber}
+      onManualClaim={hasManualStaffClaimAccess ? handleStaffManualClaim : assignDiscordNumber}
       onOpenClaimRules={openClaimRules}
       onOpenClaimScanner={() => {
         setScanFeedback(null);
@@ -2125,12 +2343,14 @@ function App() {
       }}
       onOpenControlPanel={() => changeMode("control")}
       onOpenDisplayScreen={openDisplayScreen}
+      membershipRefreshPrompt={membershipRefreshPrompt}
       onLogout={handleLogout}
       onOpenBookList={openBookList}
       onStartOAuthGrant={() => startOAuthGrant()}
       onToggleClaimNotifications={toggleClaimNotifications}
       showControlNavbar={hasTrustedStaffAccess}
       showClaimQr={showClaimQr}
+      onRefreshMembership={refreshMembershipAndUpdatePreclaim}
       hasTrustedStaffAccess={hasTrustedStaffAccess}
       setScannerActive={setScannerActive}
       setScanFeedback={setScanFeedback}

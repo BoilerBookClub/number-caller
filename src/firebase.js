@@ -36,6 +36,22 @@ const requiredConfig = [
 
 export const firebaseEnabled = requiredConfig.every(Boolean);
 
+// Debug: surface config presence to the browser console for local debugging.
+try {
+  // Only run in browser environments where `console` is available.
+  // Log which Vite vars are present (avoid printing secret values).
+  // This helps diagnose "Connecting to live event…" hangs caused by missing env or blocked network.
+  // eslint-disable-next-line no-console
+  console.debug("Firebase config present?", {
+    apiKey: Boolean(firebaseConfig.apiKey),
+    authDomain: Boolean(firebaseConfig.authDomain),
+    projectId: Boolean(firebaseConfig.projectId),
+    appId: Boolean(firebaseConfig.appId),
+    firebaseEnabled,
+  });
+} catch (e) {
+  // ignore in non-browser runtimes
+}
 const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
 export const auth = firebaseEnabled ? getAuth(app) : null;
 export const db = firebaseEnabled ? getFirestore(app) : null;
@@ -59,6 +75,12 @@ const claimsCollectionRef = firebaseEnabled
 const exchangeDiscordAccessTokenCallable = firebaseEnabled
   ? httpsCallable(functions, "exchangeDiscordAccessToken")
   : null;
+const assignPreclaimIfQueuedCallable = firebaseEnabled
+  ? httpsCallable(functions, "assignPreclaimIfQueued")
+  : null;
+const readPreclaimForUserCallable = firebaseEnabled
+  ? httpsCallable(functions, "readPreclaimForUser")
+  : null;
 
 export const signInWithDiscordAccessToken = async ({ accessToken }) => {
   if (!firebaseEnabled || !auth || !exchangeDiscordAccessTokenCallable) {
@@ -80,6 +102,26 @@ export const signInWithDiscordAccessToken = async ({ accessToken }) => {
   }
 
   return profile;
+};
+
+export const assignPreclaimIfQueued = async ({ eventId, claimKey }) => {
+  if (!firebaseEnabled || !assignPreclaimIfQueuedCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await assignPreclaimIfQueuedCallable({ eventId, claimKey });
+
+  return result.data;
+};
+
+export const readPreclaimForUser = async ({ eventId, claimKey }) => {
+  if (!firebaseEnabled || !readPreclaimForUserCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await readPreclaimForUserCallable({ eventId, claimKey });
+
+  return result.data;
 };
 
 export const signOutTrustedAuth = async () => {
@@ -126,18 +168,30 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
     return () => {};
   }
 
-  return onSnapshot(
-    liveStateRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onEvent(null);
-        return;
-      }
+  // Wrap handlers with debug logs to make subscription state visible in browser console.
+  const wrappedOnEvent = (snapshot) => {
+    try {
+      // eslint-disable-next-line no-console
+      console.debug("subscribeToLiveEvent: snapshot received", { exists: snapshot.exists });
+    } catch (e) {
+      // ignore
+    }
 
-      onEvent(snapshot.data());
-    },
-    onError,
-  );
+    if (!snapshot.exists) {
+      onEvent(null);
+      return;
+    }
+
+    onEvent(snapshot.data());
+  };
+
+  const wrappedOnError = (err) => {
+    // eslint-disable-next-line no-console
+    console.error("subscribeToLiveEvent: error", err && (err.message || err));
+    if (typeof onError === "function") onError(err);
+  };
+
+  return onSnapshot(liveStateRef, wrappedOnEvent, wrappedOnError);
 };
 
 export const readLiveEventOnce = async () => {
@@ -167,6 +221,17 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
     },
     onError,
   );
+};
+
+export const readPreclaimOnce = async ({ claimId }) => {
+  if (!firebaseEnabled || !claimId) {
+    return null;
+  }
+
+  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
+  const snapshot = await getDoc(preclaimRef);
+
+  return snapshot.exists() ? snapshot.data() : null;
 };
 
 export const subscribeToDisplayFeed = ({ onFeed, onError }) => {
@@ -401,6 +466,128 @@ export const claimEventNumber = async ({
       redeemedRound: 0,
     };
   });
+};
+
+export const enqueuePreclaim = async ({
+  claimKey,
+  avatarUrl,
+  discordUserId,
+  displayName,
+  eventId,
+  isMember,
+  participantType,
+  memberEligibleAt,
+}) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const claimId = buildClaimId(eventId, claimKey);
+  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
+  try {
+    // eslint-disable-next-line no-console
+    console.debug("enqueuePreclaim: writing preclaim", { claimId, eventId, claimKey });
+
+    // Log current auth user id and custom claims (if available) to help debug rules
+    try {
+      if (auth && auth.currentUser) {
+        // eslint-disable-next-line no-console
+        console.debug("enqueuePreclaim: auth.currentUser.uid", auth.currentUser.uid);
+        try {
+          const idTokenResult = await auth.currentUser.getIdTokenResult();
+          // eslint-disable-next-line no-console
+          console.debug("enqueuePreclaim: idTokenResult.claims", idTokenResult.claims);
+        } catch (tokenErr) {
+          // eslint-disable-next-line no-console
+          console.debug("enqueuePreclaim: failed to getIdTokenResult", tokenErr && (tokenErr.message || tokenErr));
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.debug("enqueuePreclaim: no auth.currentUser available");
+      }
+    } catch (logErr) {
+      // swallow logging errors
+    }
+
+      // Prefer the authenticated user's UID for discordUserId when available
+      const finalDiscordUserId = (auth && auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : (discordUserId ?? null);
+
+      const docPayload = {
+        avatarUrl: avatarUrl ?? "",
+        createdAt: serverTimestamp(),
+        discordUserId: finalDiscordUserId,
+        // Ensure displayName is non-empty so security rules allow the write.
+        displayName: (displayName && displayName.length > 0) ? displayName : (finalDiscordUserId ? String(finalDiscordUserId) : "Guest"),
+        eventId,
+        memberEligibleAt: memberEligibleAt ?? null,
+        isMember: isMember ?? false,
+        // Ensure participantType is present for rule validation.
+        participantType: participantType ?? "discord",
+        updatedAt: serverTimestamp(),
+      };
+
+      // eslint-disable-next-line no-console
+      console.debug("enqueuePreclaim: final payload", docPayload);
+
+      await setDoc(preclaimRef, docPayload, { merge: true });
+
+    // eslint-disable-next-line no-console
+    console.debug("enqueuePreclaim: write successful", { claimId });
+
+    return { claimId };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("enqueuePreclaim failed (client):", e && (e.code || e.message || e), e);
+    throw e;
+  }
+};
+
+export const updatePreclaimMembership = async ({
+  claimKey,
+  eventId,
+  isMember,
+  memberEligibleAt,
+  displayName,
+  avatarUrl,
+}) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const claimId = buildClaimId(eventId, claimKey);
+  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
+
+  // Use auth.currentUser.uid when available to keep owner identity consistent
+  const finalDiscordUserId = (auth && auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : null;
+
+  const updatePayload = {
+    isMember: isMember ?? false,
+    memberEligibleAt: memberEligibleAt ?? null,
+    // Ensure displayName is non-empty so security rules allow the update.
+    displayName: (displayName && displayName.length > 0) ? displayName : (finalDiscordUserId ? String(finalDiscordUserId) : "Guest"),
+    avatarUrl: avatarUrl ?? "",
+    discordUserId: finalDiscordUserId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    eventId,
+  };
+
+  // Ensure participantType is present (rules require it)
+  try {
+    const existing = await getDoc(preclaimRef);
+    const existingParticipantType = existing.exists() ? existing.data()?.participantType : null;
+
+    updatePayload.participantType = existingParticipantType || "discord";
+  } catch (e) {
+    updatePayload.participantType = "discord";
+  }
+
+  // eslint-disable-next-line no-console
+  console.debug("updatePreclaimMembership: updating preclaim", { claimId, updatePayload, finalDiscordUserId });
+
+  await setDoc(preclaimRef, updatePayload, { merge: true });
+
+  return { claimId };
 };
 
 export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
