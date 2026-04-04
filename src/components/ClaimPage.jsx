@@ -6,8 +6,6 @@ import notificationIcon from "../assets/notification.svg";
 import scanIcon from "../assets/scan.svg";
 import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName } from "../titleFonts";
-import { assignPreclaimIfQueued, readPreclaimForUser } from "../firebase";
-import { useState } from "react";
 
 function ClaimRulesModal({
   liveState,
@@ -154,7 +152,6 @@ function MemberClaimCard({
   memberEarlyAccessLabel,
   memberEarlyAccessTime,
   onManualClaim,
-  onLogout,
   onRefreshMembership,
   onStartOAuthGrant,
   membershipRefreshPrompt,

@@ -31,7 +31,6 @@ import {
   subscribeToLiveEvent,
   updateLiveEventDetails,
   assignPreclaimIfQueued,
-  readPreclaimOnce,
   updatePreclaimMembership,
   signInWithDiscordAccessToken,
 } from "./firebase";

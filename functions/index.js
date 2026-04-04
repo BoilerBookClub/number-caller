@@ -47,8 +47,8 @@ const fetchDiscordJson = async ({ accessToken, path, errorMessage }) => {
 
   try {
     return JSON.parse(respText);
-  } catch (e) {
-    console.error("Discord API returned non-JSON response", { path, body: respText });
+  } catch (err) {
+    console.error("Discord API returned non-JSON response", { path, body: respText, error: err && (err.message || err) });
     throw new HttpsError("unauthenticated", errorMessage);
   }
 };
@@ -275,7 +275,7 @@ export const syncDisplayFeedForClaimChanges = onDocumentWritten(
   },
 );
 
-export const processMemberPreclaims = onSchedule("every 1 minutes", async (context) => {
+export const processMemberPreclaims = onSchedule("every 1 minutes", async () => {
   const now = Date.now();
   const preclaimsCol = db.collection(`${LIVE_EVENT_PATH}/preclaims`);
 

@@ -49,7 +49,7 @@ try {
     appId: Boolean(firebaseConfig.appId),
     firebaseEnabled,
   });
-} catch (e) {
+} catch {
   // ignore in non-browser runtimes
 }
 const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
@@ -173,7 +173,7 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
     try {
       // eslint-disable-next-line no-console
       console.debug("subscribeToLiveEvent: snapshot received", { exists: snapshot.exists });
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -505,7 +505,7 @@ export const enqueuePreclaim = async ({
         // eslint-disable-next-line no-console
         console.debug("enqueuePreclaim: no auth.currentUser available");
       }
-    } catch (logErr) {
+    } catch {
       // swallow logging errors
     }
 
@@ -578,7 +578,7 @@ export const updatePreclaimMembership = async ({
     const existingParticipantType = existing.exists() ? existing.data()?.participantType : null;
 
     updatePayload.participantType = existingParticipantType || "discord";
-  } catch (e) {
+  } catch {
     updatePayload.participantType = "discord";
   }
 
