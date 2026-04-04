@@ -1,4 +1,4 @@
-# Number Caller
+# Event Pass
 
 This app now supports:
 
@@ -11,99 +11,81 @@ This app now supports:
 1. Install dependencies:
 
 ```bash
-npm install
-```
 
-2. Create your local env file from [.env.example](./.env.example):
+# Event Pass
 
-```bash
-cp .env.example .env.local
-```
+Event Pass is a real-time event management web app designed for events like book giveaways, raffles, or any scenario where participants are called up in a randomized or sequential order. It provides a seamless experience for both organizers and attendees, with live updates and QR code-based claiming.
 
-3. In the Firebase console, create a project and enable Firestore Database in production or test mode.
+## Key Features
 
-4. Copy your Firebase web app config values into `.env.local`.
+- **Live Display Screen**: A public-facing screen (e.g., on a projector or TV) that shows the current round, called numbers, and event title. Updates in real time for all viewers.
+- **Control Panel**: An organizer-only interface to advance rounds, call numbers, and manage the event flow. Changes are instantly reflected on all connected screens.
+- **Attendee Claim Page**: Each participant can view their number, see when they are called, and claim their item by showing a QR code for staff to scan.
+- **QR Code Verification**: Staff can scan attendee QR codes to confirm claims and prevent duplicates.
+- **Firebase Integration**: Uses Firestore for real-time data sync and Firebase Hosting for easy deployment.
+- **Discord OAuth (optional)**: Supports Discord login for attendee authentication.
 
-5. Start the app:
+## How It Works
 
-```bash
-npm run dev
-```
+1. **Organizers** use the Control Panel to start rounds and call numbers.
+2. **Attendees** watch the Display Screen or their Claim Page to see when their number is called.
+3. When called, an attendee claims their item and presents their QR code to staff.
+4. Staff scan the QR code to confirm the claim in the system.
 
-Use these URLs locally or after deployment:
+## Screens & URLs
 
-- Main attendee screen: `/`
-- Display screen: `/display`
-- Control screen: `/control`
+- **Main attendee screen**: `/` — For participants to check their number and claim status.
+- **Display screen**: `/display` — For projecting the current round and called numbers to the room.
+- **Control screen**: `/control` — For organizers to manage the event.
 
-For Discord OAuth, add this exact redirect URL in the Discord developer portal:
+## Local Setup
 
-- `https://eventpass.boilerbookclub.com/`
+1. **Install dependencies:**
+	```bash
+	npm install
+	```
+2. **Create your local env file:**
+	```bash
+	cp .env.example .env.local
+	```
+3. **Set up Firebase:**
+	- Create a Firebase project and enable Firestore Database.
+	- Copy your Firebase web app config values into `.env.local`.
+4. **Start the app:**
+	```bash
+	npm run dev
+	```
 
-## Deploy to Firebase Hosting
+## Deployment
+
+### Deploy to Firebase Hosting
 
 1. Log in to Firebase:
-
-```bash
-npx firebase-tools login
-```
-
+	```bash
+	npx firebase-tools login
+	```
 2. Link this folder to your Firebase project:
-
-```bash
-npx firebase-tools use --add
-```
-
+	```bash
+	npx firebase-tools use --add
+	```
 3. Deploy Hosting and Firestore rules:
+	```bash
+	npm run deploy
+	```
 
-```bash
-npm run deploy
-```
+### Auto Deploy With GitHub Actions
 
-## Auto Deploy With GitHub Actions
+This repo includes a GitHub Actions workflow for automatic deployment on push to `main`. See [/.github/workflows/deploy.yml](./.github/workflows/deploy.yml).
 
-This repo now includes [/.github/workflows/deploy.yml](./.github/workflows/deploy.yml).
+#### Required GitHub Secrets
 
-It will:
+- `FIREBASE_SERVICE_ACCOUNT`: JSON key for a Firebase service account with deploy permissions.
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, etc.: Your Firebase web app config (same as in `.env.local`).
 
-- run on every push to `main`
-- lint the project
-- build the Vite app with your Firebase env vars
-- deploy to the Firebase project in [.firebaserc](./.firebaserc)
+## Security Note
 
-### GitHub secrets to add
+The default Firestore rules allow public reads and writes for quick event setup. For production or public use, secure your database by requiring authentication or restricting writes.
 
-In your GitHub repo, go to `Settings > Secrets and variables > Actions` and create these repository secrets:
-
-- `FIREBASE_SERVICE_ACCOUNT`
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
-
-### What goes in FIREBASE_SERVICE_ACCOUNT
-
-1. Open Google Cloud or Firebase for the project `boiler-book-club-number-caller`
-2. Create or select a service account with permission to deploy Firebase Hosting and Firestore rules
-3. Generate a JSON key
+---
+For more details, see the comments in each screen or component file, or contact the project maintainer.
 4. Paste the full JSON contents into the `FIREBASE_SERVICE_ACCOUNT` GitHub secret
-
-### What goes in the VITE secrets
-
-Use the same values you put in `.env.local` for local development. They come from your Firebase Web App config.
-
-### How to enable it in the GitHub repo
-
-1. Push these workflow files to the repo
-2. Add the secrets listed above in GitHub
-3. Push to `main`
-
-After that, every push to `main` will deploy automatically.
-
-## Important note about write access
-
-The current Firestore rules in [firestore.rules](./firestore.rules) allow public reads and writes so the app works immediately from a static hosted site.
-
-That is acceptable for a quick event setup, but it is not secure for long-term public use. If you want, the next step is to lock writes behind Firebase Authentication or a small server-side admin endpoint.
