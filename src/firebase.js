@@ -1,5 +1,10 @@
 import { initializeApp } from "firebase/app";
 import {
+  getAuth,
+  signInWithCustomToken,
+  signOut,
+} from "firebase/auth";
+import {
   collection,
   doc,
   getDoc,
@@ -10,6 +15,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { createClaimQrToken } from "./claimQr";
 
 const firebaseConfig = {
@@ -31,9 +37,14 @@ const requiredConfig = [
 export const firebaseEnabled = requiredConfig.every(Boolean);
 
 const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
+export const auth = firebaseEnabled ? getAuth(app) : null;
 export const db = firebaseEnabled ? getFirestore(app) : null;
+const functions = firebaseEnabled ? getFunctions(app) : null;
 const liveStateRef = firebaseEnabled
   ? doc(db, "events", "live-number-caller")
+  : null;
+const displayFeedRef = firebaseEnabled
+  ? doc(db, "events", "live-number-caller", "public", "display-feed")
   : null;
 
 export const buildClaimId = (eventId, claimKey) =>
@@ -45,7 +56,39 @@ const getClaimRef = (claimId) =>
 const claimsCollectionRef = firebaseEnabled
   ? collection(db, "events", "live-number-caller", "claims")
   : null;
-const usersCollectionRef = firebaseEnabled ? collection(db, "users") : null;
+const exchangeDiscordAccessTokenCallable = firebaseEnabled
+  ? httpsCallable(functions, "exchangeDiscordAccessToken")
+  : null;
+
+export const signInWithDiscordAccessToken = async ({ accessToken }) => {
+  if (!firebaseEnabled || !auth || !exchangeDiscordAccessTokenCallable) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const result = await exchangeDiscordAccessTokenCallable({ accessToken });
+  const firebaseCustomToken = result.data?.firebaseCustomToken;
+  const profile = result.data?.profile;
+
+  if (typeof firebaseCustomToken !== "string" || !firebaseCustomToken) {
+    throw new Error("Unable to establish trusted Firebase access.");
+  }
+
+  await signInWithCustomToken(auth, firebaseCustomToken);
+
+  if (!profile || typeof profile !== "object") {
+    throw new Error("Trusted Firebase access did not return a profile.");
+  }
+
+  return profile;
+};
+
+export const signOutTrustedAuth = async () => {
+  if (!auth) {
+    return;
+  }
+
+  await signOut(auth);
+};
 
 export const getModeFromUrl = () => {
   const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -126,6 +169,26 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
   );
 };
 
+export const subscribeToDisplayFeed = ({ onFeed, onError }) => {
+  if (!firebaseEnabled) {
+    return () => {};
+  }
+
+  return onSnapshot(
+    displayFeedRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onFeed([]);
+        return;
+      }
+
+      const feedItems = snapshot.data()?.items;
+      onFeed(Array.isArray(feedItems) ? feedItems : []);
+    },
+    onError,
+  );
+};
+
 export const readClaimOnce = async ({ claimId }) => {
   if (!firebaseEnabled || !claimId) {
     return null;
@@ -148,25 +211,6 @@ export const subscribeToClaims = ({ onClaims, onError }) => {
         snapshot.docs.map((claimDoc) => ({
           claimId: claimDoc.id,
           ...claimDoc.data(),
-        })),
-      );
-    },
-    onError,
-  );
-};
-
-export const subscribeToUsers = ({ onUsers, onError }) => {
-  if (!firebaseEnabled) {
-    return () => {};
-  }
-
-  return onSnapshot(
-    usersCollectionRef,
-    (snapshot) => {
-      onUsers(
-        snapshot.docs.map((userDoc) => ({
-          userId: userDoc.id,
-          ...userDoc.data(),
         })),
       );
     },
@@ -253,6 +297,7 @@ export const closeLiveEvent = async ({ state }) => {
 
 export const claimEventNumber = async ({
   claimKey,
+  avatarUrl,
   discordUserId,
   displayName,
   email,
@@ -285,12 +330,28 @@ export const claimEventNumber = async ({
     if (existingClaimSnapshot.exists()) {
       const existingClaim = existingClaimSnapshot.data();
       const qrToken = existingClaim.qrToken ?? createClaimQrToken();
+      const claimUpdates = {
+        updatedAt: serverTimestamp(),
+      };
+      let shouldUpdate = false;
 
       if (!existingClaim.qrToken) {
-        transaction.update(claimRef, {
-          qrToken,
-          updatedAt: serverTimestamp(),
-        });
+        claimUpdates.qrToken = qrToken;
+        shouldUpdate = true;
+      }
+
+      if (avatarUrl && existingClaim.avatarUrl !== avatarUrl) {
+        claimUpdates.avatarUrl = avatarUrl;
+        shouldUpdate = true;
+      }
+
+      if (displayName && existingClaim.displayName !== displayName) {
+        claimUpdates.displayName = displayName;
+        shouldUpdate = true;
+      }
+
+      if (shouldUpdate) {
+        transaction.update(claimRef, claimUpdates);
       }
 
       return {
@@ -308,6 +369,7 @@ export const claimEventNumber = async ({
     const qrToken = createClaimQrToken();
 
     transaction.set(claimRef, {
+      avatarUrl: avatarUrl ?? "",
       claimedAt: serverTimestamp(),
       discordUserId: discordUserId ?? null,
       displayName,

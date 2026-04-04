@@ -1,11 +1,12 @@
+import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import {
+  auth,
+  signInWithDiscordAccessToken,
+  signOutTrustedAuth,
+} from "./firebase";
 
 const DISCORD_CLIENT_ID = "1329229896798441623";
-const TARGET_GUILD_ID = "835995185817059439";
-const REQUIRED_ROLE_ID = "937848500287336478";
-const SPECIAL_ROLE_IDS = ["835995868007104543"];
 const SESSION_EXPIRATION_TIME = 24 * 60 * 60 * 1000;
 const DISCORD_REDIRECT_PATH = "/";
 const POST_LOGIN_PATH_KEY = "discordPostLoginPath";
@@ -35,6 +36,7 @@ const readPostLoginPath = () => {
 const clearStoredSession = () => {
   localStorage.removeItem("discordUser");
   localStorage.removeItem("discordUsername");
+  localStorage.removeItem("discordAvatarUrl");
   localStorage.removeItem("accessToken");
   localStorage.removeItem("loginTime");
 };
@@ -42,6 +44,7 @@ const clearStoredSession = () => {
 const readStoredSession = () => {
   const storedUser = localStorage.getItem("discordUser");
   const storedUsername = localStorage.getItem("discordUsername");
+  const storedAvatarUrl = localStorage.getItem("discordAvatarUrl");
   const storedToken = localStorage.getItem("accessToken");
   const loginTime = Number(localStorage.getItem("loginTime"));
   const sessionExpired =
@@ -51,73 +54,39 @@ const readStoredSession = () => {
 
   return {
     accessToken: sessionExpired ? "" : storedToken,
+    avatarUrl: sessionExpired ? "" : storedAvatarUrl || "",
     sessionExpired,
     user: sessionExpired ? "" : storedUser || "",
     username: sessionExpired ? "" : storedUsername || storedUser || "",
   };
 };
 
-const fetchDiscordUser = async (token) => {
-  const response = await fetch("https://discord.com/api/users/@me", {
-    headers: {
-      authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error("Discord login failed.");
-  }
-
-  return response.json();
-};
-
-const persistDiscordUser = async (userData) => {
-  if (!db) {
-    return;
-  }
-
-  const avatarUrl = userData.avatar
-    ? `https://cdn.discordapp.com/avatars/${userData.id}/${userData.avatar}.png`
-    : `https://cdn.discordapp.com/embed/avatars/${Number(userData.discriminator ?? 0) % 5}.png`;
-
-  try {
-    const userDocRef = doc(db, "users", userData.id);
-    const userDoc = await getDoc(userDocRef);
-
-    if (!userDoc.exists()) {
-      await setDoc(userDocRef, {
-        username: userData.username,
-        avatarUrl,
-        roles: [],
-        firstLogin: true,
-      });
-      return;
-    }
-
-    await setDoc(
-      userDocRef,
-      {
-        username: userData.username,
-        avatarUrl,
-      },
-      { merge: true },
-    );
-  } catch (error) {
-    console.warn("Unable to persist Discord user profile to Firestore.", error);
-  }
-};
-
 export default function useDiscordLogin() {
   const initialSession = readStoredSession();
   const [user, setUser] = useState(initialSession.user);
   const [username, setUsername] = useState(initialSession.username);
-  const [accessToken, setAccessToken] = useState(initialSession.accessToken);
+  const [avatarUrl, setAvatarUrl] = useState(initialSession.avatarUrl);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(!auth);
+  const [firebaseSignedIn, setFirebaseSignedIn] = useState(Boolean(auth?.currentUser));
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
   const [accessResolved, setAccessResolved] = useState(false);
   const [isMember, setIsMember] = useState(false);
   const [hasFullAccess, setHasFullAccess] = useState(false);
   const [authError, setAuthError] = useState("");
+
+  useEffect(() => {
+    if (!auth) {
+      setFirebaseAuthReady(true);
+      setFirebaseSignedIn(false);
+      return undefined;
+    }
+
+    return onAuthStateChanged(auth, (nextUser) => {
+      setFirebaseSignedIn(Boolean(nextUser));
+      setFirebaseAuthReady(true);
+    });
+  }, []);
 
   useEffect(() => {
     const storedSession = readStoredSession();
@@ -141,15 +110,10 @@ export default function useDiscordLogin() {
     const tokenToUse = token || storedAccessToken;
 
     if (!tokenToUse) {
-      finishLoading();
-      return undefined;
-    }
-
-    if (!token && storedSession.user) {
-      setUser(storedSession.user);
-      setUsername(storedSession.username);
-      setAccessToken(tokenToUse);
-      setAuthError("");
+      setAccessResolved(false);
+      setIsMember(false);
+      setHasFullAccess(false);
+      void signOutTrustedAuth();
       finishLoading();
       return undefined;
     }
@@ -157,7 +121,6 @@ export default function useDiscordLogin() {
     if (token) {
       localStorage.setItem("accessToken", token);
       localStorage.setItem("loginTime", Date.now().toString());
-      setAccessToken(token);
       window.history.replaceState(
         {},
         document.title,
@@ -166,20 +129,26 @@ export default function useDiscordLogin() {
       window.dispatchEvent(new PopStateEvent("popstate"));
     }
 
-    fetchDiscordUser(tokenToUse)
-      .then(async (userData) => {
+    setRoleLoading(true);
+    setAccessResolved(false);
+
+    signInWithDiscordAccessToken({ accessToken: tokenToUse })
+      .then((profile) => {
         if (isDisposed) {
           return;
         }
 
-        setUser(userData.id);
-        setUsername(userData.username || userData.id);
-        setAccessToken(tokenToUse);
-        localStorage.setItem("discordUser", userData.id);
-        localStorage.setItem("discordUsername", userData.username || userData.id);
+        setUser(profile.user || "");
+        setUsername(profile.username || profile.user || "");
+        setAvatarUrl(profile.avatarUrl || "");
+        setIsMember(Boolean(profile.isMember));
+        setHasFullAccess(Boolean(profile.hasFullAccess));
+        setAccessResolved(true);
+        localStorage.setItem("discordUser", profile.user || "");
+        localStorage.setItem("discordUsername", profile.username || profile.user || "");
+        localStorage.setItem("discordAvatarUrl", profile.avatarUrl || "");
         localStorage.setItem("accessToken", tokenToUse);
         localStorage.setItem("loginTime", Date.now().toString());
-        await persistDiscordUser(userData);
         setAuthError("");
       })
       .catch((error) => {
@@ -190,10 +159,17 @@ export default function useDiscordLogin() {
         clearStoredSession();
         setUser("");
         setUsername("");
-        setAccessToken("");
+        setAvatarUrl("");
+        setAccessResolved(false);
+        setIsMember(false);
+        setHasFullAccess(false);
         setAuthError(error.message || "Unable to log in with Discord.");
+        void signOutTrustedAuth();
       })
       .finally(() => {
+        if (!isDisposed) {
+          setRoleLoading(false);
+        }
         finishLoading();
       });
 
@@ -201,83 +177,6 @@ export default function useDiscordLogin() {
       isDisposed = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!user || !accessToken) {
-      setIsMember(false);
-      setHasFullAccess(false);
-      setAccessResolved(false);
-      return;
-    }
-
-    const checkUserRole = async () => {
-      setRoleLoading(true);
-      setAccessResolved(false);
-
-      try {
-        const response = await fetch(
-          `https://discord.com/api/v10/users/@me/guilds/${TARGET_GUILD_ID}/member`,
-          {
-            headers: {
-              authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error("Unable to verify Discord membership.");
-        }
-
-        const data = await response.json();
-        const nextIsMember = data.roles.includes(REQUIRED_ROLE_ID);
-        const nextHasFullAccess = SPECIAL_ROLE_IDS.some((roleId) =>
-          data.roles.includes(roleId),
-        );
-
-        console.info("Discord roles fetched", {
-          user,
-          roles: data.roles,
-          requiredRoleId: REQUIRED_ROLE_ID,
-          specialRoleIds: SPECIAL_ROLE_IDS,
-          isMember: nextIsMember,
-          hasFullAccess: nextHasFullAccess,
-        });
-
-        setIsMember(nextIsMember);
-        setHasFullAccess(nextHasFullAccess);
-        setAuthError("");
-
-        if (db) {
-          try {
-            const userDocRef = doc(db, "users", user);
-            await setDoc(
-              userDocRef,
-              {
-                roles: data.roles,
-                isMember: nextIsMember,
-                hasFullAccess: nextHasFullAccess,
-              },
-              { merge: true },
-            );
-          } catch (error) {
-            console.warn(
-              "Unable to persist Discord role data to Firestore.",
-              error,
-            );
-          }
-        }
-      } catch (error) {
-        setIsMember(false);
-        setHasFullAccess(false);
-        setAuthError(error.message || "Unable to verify Discord access.");
-      } finally {
-        setRoleLoading(false);
-        setAccessResolved(true);
-      }
-    };
-
-    checkUserRole();
-  }, [accessToken, user]);
 
   const startOAuthGrant = (returnPath) => {
     const redirectUri = encodeURIComponent(buildDiscordRedirectUri());
@@ -299,17 +198,21 @@ export default function useDiscordLogin() {
   const logout = () => {
     setUser("");
     setUsername("");
-    setAccessToken("");
+    setAvatarUrl("");
     setAccessResolved(false);
     setIsMember(false);
     setHasFullAccess(false);
     setAuthError("");
     clearStoredSession();
+    void signOutTrustedAuth();
   };
 
   return {
     accessResolved,
     authError,
+    avatarUrl,
+    firebaseAuthReady,
+    firebaseSignedIn,
     hasFullAccess,
     isMember,
     loading,

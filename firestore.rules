@@ -1,16 +1,218 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isLiveEventDoc(eventId) {
+      return eventId == 'live-number-caller';
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      return isSignedIn() && request.auth.token.staff == true;
+    }
+
+    function isOwnClaim(data) {
+      return isSignedIn() && data.discordUserId == request.auth.uid;
+    }
+
+    function validLiveState(state) {
+      return state is map
+        && state.keys().hasOnly([
+          'title',
+          'titleFont',
+          'qrUrl',
+          'autoAdvanceEnabled',
+          'autoAdvanceBacklogLimitEnabled',
+          'autoAdvanceBacklogLimit',
+          'autoAdvanceFinalCall',
+          'autoAdvanceFinalCallTimerEnabled',
+          'autoAdvanceFinalCallTimerMinutes',
+          'autoAdvanceNextGroup',
+          'autoAdvanceStartRound',
+          'autoAdvanceThresholdPercent',
+          'groupSize',
+          'memberCheckInLeadMinutes',
+          'current',
+          'groupStartedAt',
+          'last',
+          'round',
+          'finalCall',
+          'finalCallTargetClaimIds'
+        ])
+        && state.title is string
+        && state.title.size() > 0
+        && state.title.size() <= 120
+        && state.titleFont is string
+        && state.qrUrl is string
+        && state.qrUrl.size() <= 2048
+        && state.autoAdvanceEnabled is bool
+        && state.autoAdvanceBacklogLimitEnabled is bool
+        && state.autoAdvanceBacklogLimit is int
+        && state.autoAdvanceBacklogLimit >= 0
+        && state.autoAdvanceBacklogLimit <= 500
+        && state.autoAdvanceFinalCall is bool
+        && state.autoAdvanceFinalCallTimerEnabled is bool
+        && state.autoAdvanceFinalCallTimerMinutes is int
+        && state.autoAdvanceFinalCallTimerMinutes >= 1
+        && state.autoAdvanceFinalCallTimerMinutes <= 240
+        && state.autoAdvanceNextGroup is bool
+        && state.autoAdvanceStartRound is bool
+        && state.autoAdvanceThresholdPercent is int
+        && state.autoAdvanceThresholdPercent >= 0
+        && state.autoAdvanceThresholdPercent <= 100
+        && state.groupSize is int
+        && state.groupSize >= 1
+        && state.groupSize <= 500
+        && state.memberCheckInLeadMinutes is int
+        && state.memberCheckInLeadMinutes >= 0
+        && state.memberCheckInLeadMinutes <= 240
+        && state.current is int
+        && state.current >= 0
+        && state.last is int
+        && state.last >= 0
+        && state.round is int
+        && state.round >= 0
+        && state.finalCall is bool
+        && state.finalCallTargetClaimIds is list;
+    }
+
+    function validLiveEventDocument(data) {
+      return data.keys().hasOnly([
+          'active',
+          'claimCount',
+          'claimAccessSecret',
+          'endedAt',
+          'eventId',
+          'nextClaimNumber',
+          'startedAt',
+          'state',
+          'timeframeEnd',
+          'timeframeLabel',
+          'timeframeStart',
+          'updatedAt'
+        ])
+        && data.active is bool
+        && data.claimCount is int
+        && data.claimCount >= 0
+        && data.claimAccessSecret is string
+        && data.claimAccessSecret.size() <= 256
+        && (data.eventId == null || data.eventId is string)
+        && data.nextClaimNumber is int
+        && data.nextClaimNumber >= 1
+        && data.timeframeEnd is string
+        && data.timeframeEnd.size() <= 16
+        && data.timeframeLabel is string
+        && data.timeframeLabel.size() <= 64
+        && data.timeframeStart is string
+        && data.timeframeStart.size() <= 16
+        && validLiveState(data.state);
+    }
+
+    function validClaimDocument(data) {
+      return data.keys().hasOnly([
+          'avatarUrl',
+          'claimedAt',
+          'discordUserId',
+          'displayName',
+          'email',
+          'eventId',
+          'isMember',
+          'itemClaimedAtMsHistory',
+          'itemsClaimedCount',
+          'number',
+          'participantType',
+          'qrToken',
+          'redeemedAt',
+          'redeemedRound',
+          'updatedAt'
+        ])
+        && data.avatarUrl is string
+        && data.avatarUrl.size() <= 2048
+        && (data.discordUserId == null || data.discordUserId is string)
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 120
+        && (data.email == null || data.email is string)
+        && data.eventId is string
+        && data.isMember is bool
+        && data.itemClaimedAtMsHistory is list
+        && data.itemsClaimedCount is int
+        && data.itemsClaimedCount >= 0
+        && data.number is int
+        && data.number >= 1
+        && data.participantType is string
+        && data.participantType in ['discord']
+        && data.qrToken is string
+        && data.qrToken.size() >= 8
+        && data.qrToken.size() <= 256
+        && data.redeemedRound is int
+        && data.redeemedRound >= 0;
+    }
+
+    function claimIdentityUnchanged() {
+      return request.resource.data.claimedAt == resource.data.claimedAt
+        && request.resource.data.discordUserId == resource.data.discordUserId
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.eventId == resource.data.eventId
+        && request.resource.data.number == resource.data.number
+        && request.resource.data.participantType == resource.data.participantType;
+    }
+
+    function attendeeClaimStatusUnchanged() {
+      return request.resource.data.itemClaimedAtMsHistory == resource.data.itemClaimedAtMsHistory
+        && request.resource.data.itemsClaimedCount == resource.data.itemsClaimedCount
+        && request.resource.data.redeemedAt == resource.data.redeemedAt
+        && request.resource.data.redeemedRound == resource.data.redeemedRound;
+    }
+
+    function staffClaimStatusChangeAllowed() {
+      return claimIdentityUnchanged()
+        && request.resource.data.avatarUrl == resource.data.avatarUrl
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.isMember == resource.data.isMember
+        && request.resource.data.qrToken == resource.data.qrToken;
+    }
+
     match /events/{eventId} {
-      allow read, write: if true;
+      allow get: if isLiveEventDoc(eventId);
+      allow list: if false;
+      allow create, update: if isLiveEventDoc(eventId)
+        && isStaff()
+        && validLiveEventDocument(request.resource.data);
+      allow delete: if false;
+
+      match /public/{docId} {
+        allow get: if isLiveEventDoc(eventId) && docId == 'display-feed';
+        allow list, create, update, delete: if false;
+      }
 
       match /claims/{claimId} {
-        allow read, write: if true;
+        allow get: if isLiveEventDoc(eventId)
+          && (isStaff() || isOwnClaim(resource.data));
+        allow list: if isLiveEventDoc(eventId) && isStaff();
+        allow create: if isLiveEventDoc(eventId)
+          && isOwnClaim(request.resource.data)
+          && request.resource.data.isMember == (request.auth.token.member == true)
+          && validClaimDocument(request.resource.data)
+          && request.resource.data.eventId == get(/databases/$(database)/documents/events/live-number-caller).data.eventId;
+        allow update: if isLiveEventDoc(eventId)
+          && validClaimDocument(request.resource.data)
+          && (
+            (isStaff() && staffClaimStatusChangeAllowed())
+            || (
+              isOwnClaim(resource.data)
+              && claimIdentityUnchanged()
+              && attendeeClaimStatusUnchanged()
+            )
+          );
+        allow delete: if false;
       }
     }
 
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

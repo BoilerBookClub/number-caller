@@ -1,11 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import confetti from "canvas-confetti";
-import QrScanner from "qr-scanner";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import sound from "/sound.mp3";
 import "./App.css";
 import ClaimPage from "./components/ClaimPage";
-import ControlPage from "./components/ControlPage";
-import DisplayPage from "./components/DisplayPage";
 import {
   ClaimAccessGatePage,
   ClosedEventPage,
@@ -25,19 +21,20 @@ import {
   createLiveEvent,
   firebaseEnabled,
   getModeFromUrl,
-  readClaimOnce,
-  readLiveEventOnce,
   getScreenUrl,
   pushLiveState,
   redeemClaimByQr,
   subscribeToClaim,
   subscribeToClaims,
+  subscribeToDisplayFeed,
   subscribeToLiveEvent,
-  subscribeToUsers,
   updateLiveEventDetails,
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
+
+const ControlPage = lazy(() => import("./components/ControlPage"));
+const DisplayPage = lazy(() => import("./components/DisplayPage"));
 
 const defaultQrUrl =
   "https://www.boilerbookclub.com/announcements/";
@@ -265,22 +262,16 @@ const buildClaimResultFromRecord = (claimRecord) => {
   };
 };
 
-const looksLikeDiscordId = (value) => /^\d{16,20}$/.test(value ?? "");
-
-const normalizeRosterClaim = (nextClaim, userProfilesByUserId) => {
-  const profile = nextClaim.discordUserId
-    ? userProfilesByUserId[nextClaim.discordUserId]
-    : null;
-  const profileUsername = profile?.username ?? "";
+const normalizeRosterClaim = (nextClaim) => {
   const storedDisplayName = nextClaim.displayName?.trim() ?? "";
   const resolvedDisplayName =
-    !storedDisplayName || looksLikeDiscordId(storedDisplayName)
-      ? profileUsername || nextClaim.discordUserId || "Unknown attendee"
+    !storedDisplayName
+      ? nextClaim.discordUserId || "Unknown attendee"
       : storedDisplayName;
 
   return {
     claimId: nextClaim.claimId,
-    avatarUrl: profile?.avatarUrl ?? "",
+    avatarUrl: nextClaim.avatarUrl ?? "",
     claimedAtMs: getTimestampMs(nextClaim.claimedAt),
     displayName: resolvedDisplayName,
     eventId: nextClaim.eventId ?? null,
@@ -456,8 +447,6 @@ const buildClaimRulesAcknowledgedKey = (eventId, claimId) =>
 const buildClaimLastNotifiedRoundKey = (eventId, claimId) =>
   `claimLastNotifiedRound:${eventId}:${claimId}`;
 
-const DISPLAY_FEED_ITEM_LIFETIME_MS = 100_000;
-
 const readStoredBoolean = (key) => window.localStorage.getItem(key) === "true";
 
 const getBrowserNotificationPermission = () => {
@@ -534,7 +523,6 @@ function App() {
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
   const [claimRoster, setClaimRoster] = useState([]);
-  const [userProfilesByUserId, setUserProfilesByUserId] = useState({});
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
@@ -551,17 +539,20 @@ function App() {
   const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const autoAdvanceQueueKeyRef = useRef("");
+  const confettiModuleRef = useRef(null);
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
-  const previousClaimFeedSnapshotRef = useRef(null);
+  const qrScannerModuleRef = useRef(null);
   const scannerRef = useRef(null);
   const scannerVideoRef = useRef(null);
   const scanHandlerRef = useRef(null);
   const notificationRegistrationRef = useRef(null);
-  const displayFeedTimeoutsRef = useRef(new Map());
   const {
     accessResolved,
     authError,
+    avatarUrl,
+    firebaseAuthReady,
+    firebaseSignedIn,
     hasFullAccess,
     isMember,
     loading: authLoading,
@@ -579,7 +570,10 @@ function App() {
   const liveState = liveEvent.state;
   const { current, finalCall: isFinalCall, last } = liveState;
   const displayUrl = getScreenUrl("display");
-  const isCheckingAccess = authLoading || roleLoading || (loggedIn && !accessResolved);
+  const hasTrustedAttendeeAccess = firebaseAuthReady && firebaseSignedIn;
+  const hasTrustedStaffAccess = hasTrustedAttendeeAccess && hasFullAccess;
+  const isCheckingAccess =
+    authLoading || roleLoading || (loggedIn && (!accessResolved || !firebaseAuthReady));
   const isEventLive = liveEvent.active;
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
@@ -618,7 +612,7 @@ function App() {
   const qrRotationRemainingMs = CLAIM_ACCESS_ROTATION_MS - qrRotationElapsedMs;
   const qrRotationProgress = qrRotationElapsedMs / CLAIM_ACCESS_ROTATION_MS;
   const nextQrCountdownSeconds = Math.ceil(qrRotationRemainingMs / 1000);
-  const attendeeClaimKey = loggedIn && user ? `discord:${user}` : "";
+  const attendeeClaimKey = loggedIn && hasTrustedAttendeeAccess && user ? `discord:${user}` : "";
   const persistedClaimSession = readPersistedClaimSession();
   const persistedClaimEventId = persistedClaimSession?.eventId ?? "";
   const persistedAttendeeClaimId =
@@ -717,6 +711,9 @@ function App() {
       ? "Call the first group to start item pickup."
       : "";
   const isDisplayRoute = mode === "display";
+  const canManageEvent = mode === "control" && isEventLive && hasTrustedStaffAccess;
+  const shouldSubscribeToRosterData =
+    isEventLive && hasTrustedStaffAccess && (isDisplayRoute || canManageEvent);
   const isAttendeeClaimRoute =
     mode === null &&
     typeof attendeeClaimNumber === "number" &&
@@ -724,29 +721,10 @@ function App() {
     attendeeClaimNumber <= liveState.current;
   const shouldCelebrateCurrentCall = isDisplayRoute || isAttendeeClaimRoute;
   const shouldRedirectToControl =
-    loggedIn && hasFullAccess && !isCheckingAccess && mode === null && !claimAccessCode;
+    loggedIn && hasTrustedStaffAccess && !isCheckingAccess && mode === null && !claimAccessCode;
   const shouldLockBackgroundScroll =
     (mode === null && Boolean(claimResult) && isClaimRulesOpen) ||
     (mode === "control" && isEventLive && isEventDetailsModalOpen);
-
-  const pushDisplayFeedItem = useCallback((item) => {
-    const feedItemId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const nextFeedItem = {
-      id: feedItemId,
-      ...item,
-    };
-
-    setDisplayFeedItems((currentItems) => [nextFeedItem, ...currentItems].slice(0, 5));
-
-    const timeoutId = window.setTimeout(() => {
-      setDisplayFeedItems((currentItems) =>
-        currentItems.filter((currentItem) => currentItem.id !== feedItemId),
-      );
-      displayFeedTimeoutsRef.current.delete(feedItemId);
-    }, DISPLAY_FEED_ITEM_LIFETIME_MS);
-
-    displayFeedTimeoutsRef.current.set(feedItemId, timeoutId);
-  }, []);
 
   const changeMode = useCallback((nextMode, options = {}) => {
     const { replace = false } = options;
@@ -760,12 +738,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (mode !== "control" || isCheckingAccess || hasFullAccess) {
+    if (mode !== "control" || isCheckingAccess || hasTrustedStaffAccess) {
       return;
     }
 
     changeMode(null, { replace: true });
-  }, [changeMode, hasFullAccess, isCheckingAccess, mode]);
+  }, [changeMode, hasTrustedStaffAccess, isCheckingAccess, mode]);
 
   const openDisplayScreen = () => {
     window.open(displayUrl, "_blank", "noopener,noreferrer");
@@ -909,60 +887,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!firebaseEnabled) {
-      return undefined;
-    }
-
-    let isDisposed = false;
-
-    const syncLiveEvent = async () => {
-      try {
-        const nextEvent = await readLiveEventOnce();
-
-        if (isDisposed) {
-          return;
-        }
-
-        setLiveEvent(normalizeLiveEvent(nextEvent));
-        setIsHydrated(true);
-      } catch (error) {
-        if (!isDisposed) {
-          setIsHydrated(true);
-          console.error(error.message || "Unable to refresh live event state.");
-        }
-      }
-    };
-
-    const handleVisibilityRefresh = () => {
-      if (document.visibilityState === "visible") {
-        void syncLiveEvent();
-      }
-    };
-
-    const handlePageShow = () => {
-      void syncLiveEvent();
-    };
-
-    void syncLiveEvent();
-
-    const intervalId = window.setInterval(() => {
-      void syncLiveEvent();
-    }, 5_000);
-
-    window.addEventListener("focus", handleVisibilityRefresh);
-    window.addEventListener("pageshow", handlePageShow);
-    document.addEventListener("visibilitychange", handleVisibilityRefresh);
-
-    return () => {
-      isDisposed = true;
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleVisibilityRefresh);
-      window.removeEventListener("pageshow", handlePageShow);
-      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!shouldRedirectToControl) {
       return;
     }
@@ -978,13 +902,6 @@ function App() {
     return () => {
       window.clearInterval(timer);
     };
-  }, []);
-
-  useEffect(() => () => {
-    displayFeedTimeoutsRef.current.forEach((timeoutId) => {
-      window.clearTimeout(timeoutId);
-    });
-    displayFeedTimeoutsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -1011,11 +928,20 @@ function App() {
     const previousCurrent = previousCurrentRef.current;
 
     if (current > previousCurrent && !isFinalCall && shouldCelebrateCurrentCall) {
-      confetti({
-        particleCount: 80,
-        spread: 200,
-        origin: { y: 0.6 },
-      });
+      const celebrateCurrentCall = async () => {
+        if (!confettiModuleRef.current) {
+          const confettiModule = await import("canvas-confetti");
+          confettiModuleRef.current = confettiModule.default;
+        }
+
+        confettiModuleRef.current({
+          particleCount: 80,
+          spread: 200,
+          origin: { y: 0.6 },
+        });
+      };
+
+      void celebrateCurrentCall();
 
       if (dingSound.current) {
         dingSound.current.currentTime = 0;
@@ -1059,14 +985,25 @@ function App() {
     }
 
     previousEventIdRef.current = liveEvent.eventId;
-    previousClaimFeedSnapshotRef.current = null;
-    displayFeedTimeoutsRef.current.forEach((timeoutId) => {
-      window.clearTimeout(timeoutId);
-    });
-    displayFeedTimeoutsRef.current.clear();
     setDisplayFeedItems([]);
     resetClaimFlow();
   }, [liveEvent.eventId]);
+
+  useEffect(() => {
+    if (!isEventLive) {
+      setDisplayFeedItems([]);
+      return undefined;
+    }
+
+    return subscribeToDisplayFeed({
+      onFeed: (nextFeedItems) => {
+        setDisplayFeedItems(nextFeedItems);
+      },
+      onError: (error) => {
+        console.error(error.message || "Unable to sync display feed.");
+      },
+    });
+  }, [isEventLive]);
 
   useEffect(() => {
     if (!effectiveClaimResult || !claimRulesAcknowledgedKey) {
@@ -1178,7 +1115,7 @@ function App() {
   }, [isAttendeeEventLive, liveState.title]);
 
   useEffect(() => {
-    if (!attendeeClaimId) {
+    if (!attendeeClaimId || !hasTrustedAttendeeAccess) {
       setClaimRecord(null);
       return undefined;
     }
@@ -1214,81 +1151,7 @@ function App() {
         console.error(error.message || "Unable to sync claim status.");
       },
     });
-  }, [attendeeClaimId]);
-
-  useEffect(() => {
-    if (!attendeeClaimId) {
-      return undefined;
-    }
-
-    let isDisposed = false;
-
-    const syncClaimRecord = async () => {
-      try {
-        const nextClaim = await readClaimOnce({ claimId: attendeeClaimId });
-
-        if (isDisposed) {
-          return;
-        }
-
-        const nextClaimRecord = normalizeClaimRecord(attendeeClaimId, nextClaim);
-
-        setClaimRecord(nextClaimRecord);
-        setClaimResult((currentResult) => {
-          if (!nextClaimRecord) {
-            return currentResult?.claimId === attendeeClaimId ? null : currentResult;
-          }
-
-          const nextClaimResult = buildClaimResultFromRecord(nextClaimRecord);
-
-          if (
-            currentResult?.claimId === nextClaimResult.claimId &&
-            currentResult.number === nextClaimResult.number &&
-            currentResult.qrToken === nextClaimResult.qrToken &&
-            currentResult.redeemedRound === nextClaimResult.redeemedRound &&
-            currentResult.itemsClaimedCount === nextClaimResult.itemsClaimedCount &&
-            currentResult.isMember === nextClaimResult.isMember
-          ) {
-            return currentResult;
-          }
-
-          return nextClaimResult;
-        });
-      } catch (error) {
-        if (!isDisposed) {
-          console.error(error.message || "Unable to refresh claim status.");
-        }
-      }
-    };
-
-    const handleVisibilityRefresh = () => {
-      if (document.visibilityState === "visible") {
-        void syncClaimRecord();
-      }
-    };
-
-    const handlePageShow = () => {
-      void syncClaimRecord();
-    };
-
-    void syncClaimRecord();
-
-    const intervalId = window.setInterval(() => {
-      void syncClaimRecord();
-    }, 3_000);
-
-    window.addEventListener("focus", handleVisibilityRefresh);
-    window.addEventListener("pageshow", handlePageShow);
-    document.addEventListener("visibilitychange", handleVisibilityRefresh);
-
-    return () => {
-      isDisposed = true;
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleVisibilityRefresh);
-      window.removeEventListener("pageshow", handlePageShow);
-      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
-    };
-  }, [attendeeClaimId]);
+  }, [attendeeClaimId, hasTrustedAttendeeAccess]);
 
   useEffect(() => {
     if (!loggedIn || !user) {
@@ -1390,96 +1253,29 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!isEventLive) {
+    if (!shouldSubscribeToRosterData) {
       setClaimRoster([]);
-      previousClaimFeedSnapshotRef.current = null;
       return undefined;
     }
 
     return subscribeToClaims({
       onClaims: (nextClaims) => {
-        const normalizedClaims = nextClaims.map((nextClaim) =>
-          normalizeRosterClaim(nextClaim, userProfilesByUserId),
-        );
-        const nextClaimSnapshot = new Map(
-          normalizedClaims.map((nextClaim) => [
-            nextClaim.claimId,
-            {
-              avatarUrl: nextClaim.avatarUrl,
-              displayName: nextClaim.displayName,
-              itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
-              redeemedRound: nextClaim.redeemedRound ?? 0,
-            },
-          ]),
-        );
-        const previousClaimSnapshot = previousClaimFeedSnapshotRef.current;
-
-        if (previousClaimSnapshot) {
-          nextClaimSnapshot.forEach((nextClaim, claimId) => {
-            const previousClaim = previousClaimSnapshot.get(claimId);
-
-            if (!previousClaim) {
-              pushDisplayFeedItem({
-                action: "joined",
-                avatarUrl: nextClaim.avatarUrl,
-                username: nextClaim.displayName,
-              });
-              return;
-            }
-
-            if (
-              nextClaim.itemsClaimedCount > previousClaim.itemsClaimedCount ||
-              nextClaim.redeemedRound > previousClaim.redeemedRound
-            ) {
-              pushDisplayFeedItem({
-                action: "claimed an item",
-                avatarUrl: nextClaim.avatarUrl,
-                username: nextClaim.displayName,
-              });
-            }
-          });
-        }
-
-        previousClaimFeedSnapshotRef.current = nextClaimSnapshot;
+        const normalizedClaims = nextClaims.map((nextClaim) => normalizeRosterClaim(nextClaim));
         setClaimRoster(normalizedClaims);
       },
       onError: (error) => {
         console.error(error.message || "Unable to sync attendee claims.");
       },
     });
-  }, [isEventLive, pushDisplayFeedItem, userProfilesByUserId]);
+  }, [shouldSubscribeToRosterData]);
 
   useEffect(() => {
-    if (!isEventLive) {
-      setUserProfilesByUserId({});
-      return undefined;
-    }
-
-    return subscribeToUsers({
-      onUsers: (nextUsers) => {
-        setUserProfilesByUserId(
-          nextUsers.reduce((accumulator, nextUser) => {
-            accumulator[nextUser.userId] = {
-              avatarUrl: nextUser.avatarUrl || "",
-              username: nextUser.username || nextUser.userId,
-            };
-            return accumulator;
-          }, {}),
-        );
-      },
-      onError: (error) => {
-        console.error(error.message || "Unable to sync Discord user profiles.");
-      },
-    });
-  }, [isEventLive]);
-
-  useEffect(() => {
-    if (mode === "control" && isEventLive && hasFullAccess) {
+    if (mode === "control" && isEventLive && hasTrustedStaffAccess) {
       return;
     }
 
     setScannerActive(false);
-  }, [hasFullAccess, isEventLive, mode]);
+  }, [hasTrustedStaffAccess, isEventLive, mode]);
 
   useEffect(() => {
     if (!scanFeedback) {
@@ -1544,50 +1340,76 @@ function App() {
   }, [scanLoading, scannerActive]);
 
   useEffect(() => {
-    if (!scannerActive || !scannerVideoRef.current || !hasFullAccess || !isEventLive) {
+    if (!scannerActive || !scannerVideoRef.current || !hasTrustedStaffAccess || !isEventLive) {
       return undefined;
     }
 
-    const scanner = new QrScanner(
-      scannerVideoRef.current,
-      (result) => {
-        scanner.stop();
-        void scanHandlerRef.current?.(
-          typeof result === "string" ? result : result?.data ?? "",
+    let isDisposed = false;
+    let scanner = null;
+
+    const startScanner = async () => {
+      try {
+        if (!qrScannerModuleRef.current) {
+          const qrScannerModule = await import("qr-scanner");
+          qrScannerModuleRef.current = qrScannerModule.default;
+        }
+
+        if (isDisposed || !scannerVideoRef.current) {
+          return;
+        }
+
+        scanner = new qrScannerModuleRef.current(
+          scannerVideoRef.current,
+          (result) => {
+            scanner.stop();
+            void scanHandlerRef.current?.(
+              typeof result === "string" ? result : result?.data ?? "",
+            );
+          },
+          {
+            highlightCodeOutline: true,
+            highlightScanRegion: true,
+            maxScansPerSecond: 5,
+            preferredCamera: "environment",
+          },
         );
-      },
-      {
-        highlightCodeOutline: true,
-        highlightScanRegion: true,
-        maxScansPerSecond: 5,
-        preferredCamera: "environment",
-      },
-    );
 
-    scannerRef.current = scanner;
+        scannerRef.current = scanner;
+        await scanner.start();
+      } catch (error) {
+        if (isDisposed) {
+          return;
+        }
 
-    scanner.start().catch((error) => {
-      setScanFeedback({
-        tone: "error",
-        message: error.message || "Unable to start the camera scanner.",
-      });
-      setScannerActive(false);
-    });
+        setScanFeedback({
+          tone: "error",
+          message: error.message || "Unable to start the camera scanner.",
+        });
+        setScannerActive(false);
+      }
+    };
+
+    void startScanner();
 
     return () => {
-      scanner.destroy();
+      isDisposed = true;
+
+      if (scanner) {
+        scanner.destroy();
+      }
 
       if (scannerRef.current === scanner) {
         scannerRef.current = null;
       }
     };
-  }, [hasFullAccess, isEventLive, scannerActive]);
+  }, [hasTrustedStaffAccess, isEventLive, scannerActive]);
 
   useEffect(() => {
     if (
       !isAttendeeEventLive ||
       !claimAccessGranted ||
       !loggedIn ||
+      !hasTrustedAttendeeAccess ||
       isCheckingAccess ||
       !isClaimWindowOpen ||
       claimLoading ||
@@ -1602,6 +1424,7 @@ function App() {
       try {
         const result = await claimEventNumber({
           claimKey: `discord:${user}`,
+          avatarUrl,
           discordUserId: user,
           displayName: username || user,
           eventId: liveEvent.eventId,
@@ -1629,6 +1452,8 @@ function App() {
     isMember,
     liveEvent.eventId,
     loggedIn,
+    hasTrustedAttendeeAccess,
+    avatarUrl,
     user,
     username,
   ]);
@@ -1767,6 +1592,10 @@ function App() {
   }, [currentEventClaims, currentRound, liveState, persistState]);
 
   useEffect(() => {
+    if (!canManageEvent) {
+      return;
+    }
+
     const queueKey = isFinalCall
       ? `round:${currentRound}:final:${finalCallTargetClaimIdsKey}`
       : current === 0
@@ -1870,6 +1699,7 @@ function App() {
     backlogCount,
     currentRound,
     currentTime,
+    canManageEvent,
     finalCallTargetClaimIdsKey,
     groupSize,
     increment,
@@ -2036,15 +1866,17 @@ function App() {
 
   if (mode === "display") {
     return (
-      <DisplayPage
-        displayFeedItems={displayFeedItems}
-        nextQrCountdownSeconds={nextQrCountdownSeconds}
-        qrRotationProgress={qrRotationProgress}
-        isEventLive={isEventLive}
-        liveEvent={liveEvent}
-        liveState={liveState}
-        rotatingClaimAccessUrl={rotatingClaimAccessUrl}
-      />
+      <Suspense fallback={<div className="mode-select"><h2>Loading display...</h2></div>}>
+        <DisplayPage
+          displayFeedItems={displayFeedItems}
+          nextQrCountdownSeconds={nextQrCountdownSeconds}
+          qrRotationProgress={qrRotationProgress}
+          isEventLive={isEventLive}
+          liveEvent={liveEvent}
+          liveState={liveState}
+          rotatingClaimAccessUrl={rotatingClaimAccessUrl}
+        />
+      </Suspense>
     );
   }
 
@@ -2065,7 +1897,7 @@ function App() {
       );
     }
 
-    if (!hasFullAccess) {
+    if (!hasTrustedStaffAccess) {
       return (
         <div className="mode-select">
           <h2>Returning to main page...</h2>
@@ -2074,60 +1906,62 @@ function App() {
     }
 
     return (
-      <ControlPage
-        activeQueueClaims={activeQueueClaims}
-        activeQueueElapsedLabel={activeQueueElapsedLabel}
-        autoAdvanceBacklogLimit={autoAdvanceBacklogLimit}
-        autoAdvanceBacklogLimitEnabled={Boolean(liveState.autoAdvanceBacklogLimitEnabled)}
-        autoAdvanceEnabled={Boolean(liveState.autoAdvanceEnabled)}
-        autoAdvanceFinalCall={Boolean(liveState.autoAdvanceFinalCall)}
-        autoAdvanceFinalCallTimerEnabled={Boolean(liveState.autoAdvanceFinalCallTimerEnabled)}
-        autoAdvanceFinalCallTimerMinutes={autoAdvanceFinalCallTimerMinutes}
-        autoAdvanceNextGroup={Boolean(liveState.autoAdvanceNextGroup)}
-        autoAdvanceStartRound={Boolean(liveState.autoAdvanceStartRound)}
-        groupSize={groupSize}
-        backlogClaims={backlogClaims}
-        controlForm={controlForm}
-        controlMessage={controlMessage}
-        controlSaving={controlSaving}
-        currentEventClaims={currentEventClaims}
-        currentRound={currentRound}
-        autoAdvanceThresholdPercent={autoAdvanceThresholdPercent}
-        isEventDetailsModalOpen={isEventDetailsModalOpen}
-        isEventLive={isEventLive}
-        isLastGroup={isLastGroup}
-        liveEvent={liveEvent}
-        liveState={liveState}
-        onActivateFinalCall={activateFinalCall}
-        onAutoAdvanceActionChange={updateAutoAdvanceAction}
-        onCloseEvent={handleCloseEvent}
-        onCloseEventDetails={closeEventDetailsModal}
-        onCloseScanner={() => setScannerActive(false)}
-        onFieldChange={handleControlFieldChange}
-        onHandleLogout={handleLogout}
-        onIncrement={increment}
-        onNewRound={newRound}
-        onOpenDisplayScreen={openDisplayScreen}
-        onOpenEventDetails={() => setIsEventDetailsModalOpen(true)}
-        onOpenScanner={() => {
-          setScanFeedback(null);
-          setScannerActive(true);
-        }}
-        onAutoAdvanceBacklogLimitChange={updateAutoAdvanceBacklogLimit}
-        onGroupSizeChange={updateGroupSize}
-        onAutoAdvanceTimerMinutesChange={updateAutoAdvanceTimerMinutes}
-        onAutoAdvanceThresholdChange={updateAutoAdvanceThresholdPercent}
-        onSaveEventDetails={handleSaveEventDetails}
-        onStartEvent={handleStartEvent}
-        onToggleAutoAdvance={toggleAutoAdvanceEnabled}
-        queueDescription={queueDescription}
-        queueTitle={queueTitle}
-        scanFeedback={scanFeedback}
-        scanLoading={scanLoading}
-        scannerActive={scannerActive}
-        scannerVideoRef={scannerVideoRef}
-        totalPeopleWithNumbers={totalPeopleWithNumbers}
-      />
+      <Suspense fallback={<div className="mode-select"><h2>Loading control panel...</h2></div>}>
+        <ControlPage
+          activeQueueClaims={activeQueueClaims}
+          activeQueueElapsedLabel={activeQueueElapsedLabel}
+          autoAdvanceBacklogLimit={autoAdvanceBacklogLimit}
+          autoAdvanceBacklogLimitEnabled={Boolean(liveState.autoAdvanceBacklogLimitEnabled)}
+          autoAdvanceEnabled={Boolean(liveState.autoAdvanceEnabled)}
+          autoAdvanceFinalCall={Boolean(liveState.autoAdvanceFinalCall)}
+          autoAdvanceFinalCallTimerEnabled={Boolean(liveState.autoAdvanceFinalCallTimerEnabled)}
+          autoAdvanceFinalCallTimerMinutes={autoAdvanceFinalCallTimerMinutes}
+          autoAdvanceNextGroup={Boolean(liveState.autoAdvanceNextGroup)}
+          autoAdvanceStartRound={Boolean(liveState.autoAdvanceStartRound)}
+          groupSize={groupSize}
+          backlogClaims={backlogClaims}
+          controlForm={controlForm}
+          controlMessage={controlMessage}
+          controlSaving={controlSaving}
+          currentEventClaims={currentEventClaims}
+          currentRound={currentRound}
+          autoAdvanceThresholdPercent={autoAdvanceThresholdPercent}
+          isEventDetailsModalOpen={isEventDetailsModalOpen}
+          isEventLive={isEventLive}
+          isLastGroup={isLastGroup}
+          liveEvent={liveEvent}
+          liveState={liveState}
+          onActivateFinalCall={activateFinalCall}
+          onAutoAdvanceActionChange={updateAutoAdvanceAction}
+          onCloseEvent={handleCloseEvent}
+          onCloseEventDetails={closeEventDetailsModal}
+          onCloseScanner={() => setScannerActive(false)}
+          onFieldChange={handleControlFieldChange}
+          onHandleLogout={handleLogout}
+          onIncrement={increment}
+          onNewRound={newRound}
+          onOpenDisplayScreen={openDisplayScreen}
+          onOpenEventDetails={() => setIsEventDetailsModalOpen(true)}
+          onOpenScanner={() => {
+            setScanFeedback(null);
+            setScannerActive(true);
+          }}
+          onAutoAdvanceBacklogLimitChange={updateAutoAdvanceBacklogLimit}
+          onGroupSizeChange={updateGroupSize}
+          onAutoAdvanceTimerMinutesChange={updateAutoAdvanceTimerMinutes}
+          onAutoAdvanceThresholdChange={updateAutoAdvanceThresholdPercent}
+          onSaveEventDetails={handleSaveEventDetails}
+          onStartEvent={handleStartEvent}
+          onToggleAutoAdvance={toggleAutoAdvanceEnabled}
+          queueDescription={queueDescription}
+          queueTitle={queueTitle}
+          scanFeedback={scanFeedback}
+          scanLoading={scanLoading}
+          scannerActive={scannerActive}
+          scannerVideoRef={scannerVideoRef}
+          totalPeopleWithNumbers={totalPeopleWithNumbers}
+        />
+      </Suspense>
     );
   }
 
