@@ -59,33 +59,35 @@ function ClosedEventPage({
           <h1>Thanks for coming to {endedEventTitle}!!!</h1>
         </div>
       ) : null}
-      <div className="entry-card">
-        <h2 className="entry-heading-with-logo">
-          <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
-          <span>Event Staff Login</span>
-        </h2>
-        <div className="entry-staff-action">
-          {!loggedIn ? (
-            <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
-              {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
-            </button>
-          ) : null}
-          {loggedIn && hasFullAccess && !isCheckingAccess ? (
-            <button onClick={onOpenControl}>Open Control Panel</button>
-          ) : null}
+      {!endedEventTitle ? (
+        <div className="entry-card">
+          <h2 className="entry-heading-with-logo">
+            <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+            <span>Event Staff Login</span>
+          </h2>
+          <div className="entry-staff-action">
+            {!loggedIn ? (
+              <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
+                {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
+              </button>
+            ) : null}
+            {loggedIn && hasFullAccess && !isCheckingAccess ? (
+              <button onClick={onOpenControl}>Open Control Panel</button>
+            ) : null}
+            {loggedIn && !hasFullAccess && !isCheckingAccess ? (
+              <button className="secondary-button" onClick={handleLogout}>
+                Logout
+              </button>
+            ) : null}
+          </div>
           {loggedIn && !hasFullAccess && !isCheckingAccess ? (
-            <button className="secondary-button" onClick={handleLogout}>
-              Logout
-            </button>
+            <p className="entry-message">
+              This login is not on the staff allowlist.
+            </p>
           ) : null}
+          {authError ? <p className="entry-message">{authError}</p> : null}
         </div>
-        {loggedIn && !hasFullAccess && !isCheckingAccess ? (
-          <p className="entry-message">
-            This login is not on the staff allowlist.
-          </p>
-        ) : null}
-        {authError ? <p className="entry-message">{authError}</p> : null}
-      </div>
+      ) : null}
     </div>
   );
 }
