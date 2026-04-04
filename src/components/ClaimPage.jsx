@@ -109,7 +109,7 @@ function ClaimResultCard({
           <strong>{currentRound}</strong>
         </div>
         <div className="stat-card">
-          <span>Currently Calling</span>
+          <span>Currently</span>
           <strong>{liveCallLabel}</strong>
         </div>
       </div>
