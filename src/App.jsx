@@ -1917,9 +1917,9 @@ function App() {
     return "";
   };
 
-  const buildEventStateFromForm = () =>
+  const buildEventStateFromForm = (baseState = liveState) =>
     normalizeState({
-      ...liveState,
+      ...baseState,
       memberCheckInLeadMinutes: normalizeMemberCheckInLeadMinutes(
         controlForm.memberCheckInLeadMinutes,
       ),
@@ -1950,7 +1950,7 @@ function App() {
       await createLiveEvent({
         claimAccessSecret: createClaimAccessSecret(),
         eventId: buildEventId(),
-        state: buildEventStateFromForm(),
+        state: buildEventStateFromForm(initialState),
         timeframeEnd: controlForm.timeframeEnd,
         timeframeLabel: formatTimeRange(
           controlForm.timeframeStart,
