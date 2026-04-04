@@ -68,6 +68,7 @@ export const getScreenUrl = (mode) => {
   const url = new URL(window.location.href);
 
   url.pathname = mode ? `/${mode}` : "/";
+  url.hash = "";
   url.searchParams.delete("mode");
 
   if (mode) {

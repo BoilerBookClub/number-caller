@@ -1151,16 +1151,6 @@ function App() {
   }, [isAttendeeEventLive, liveState.title]);
 
   useEffect(() => {
-    if (isEventLive || mode === "control") {
-      return;
-    }
-
-    if (mode === "display") {
-      changeMode(null, { replace: true });
-    }
-  }, [changeMode, isEventLive, mode]);
-
-  useEffect(() => {
     if (!attendeeClaimId) {
       setClaimRecord(null);
       return undefined;

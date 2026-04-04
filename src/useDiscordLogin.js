@@ -122,6 +122,13 @@ export default function useDiscordLogin() {
   useEffect(() => {
     const storedSession = readStoredSession();
     const { accessToken: storedAccessToken, sessionExpired } = storedSession;
+    let isDisposed = false;
+
+    const finishLoading = () => {
+      if (!isDisposed) {
+        setLoading(false);
+      }
+    };
 
     if (sessionExpired) {
       clearStoredSession();
@@ -134,8 +141,17 @@ export default function useDiscordLogin() {
     const tokenToUse = token || storedAccessToken;
 
     if (!tokenToUse) {
-      setLoading(false);
-      return;
+      finishLoading();
+      return undefined;
+    }
+
+    if (!token && storedSession.user) {
+      setUser(storedSession.user);
+      setUsername(storedSession.username);
+      setAccessToken(tokenToUse);
+      setAuthError("");
+      finishLoading();
+      return undefined;
     }
 
     if (token) {
@@ -152,6 +168,10 @@ export default function useDiscordLogin() {
 
     fetchDiscordUser(tokenToUse)
       .then(async (userData) => {
+        if (isDisposed) {
+          return;
+        }
+
         setUser(userData.id);
         setUsername(userData.username || userData.id);
         setAccessToken(tokenToUse);
@@ -163,6 +183,10 @@ export default function useDiscordLogin() {
         setAuthError("");
       })
       .catch((error) => {
+        if (isDisposed) {
+          return;
+        }
+
         clearStoredSession();
         setUser("");
         setUsername("");
@@ -170,9 +194,13 @@ export default function useDiscordLogin() {
         setAuthError(error.message || "Unable to log in with Discord.");
       })
       .finally(() => {
-        setLoading(false);
+        finishLoading();
       });
-  }, [initialSession.accessToken]);
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!user || !accessToken) {

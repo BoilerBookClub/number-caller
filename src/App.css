@@ -1978,7 +1978,7 @@ button:disabled {
 }
 
 .carnival {
-  margin: 0 0 1rem;
+  margin: 0 0 5rem;
   font-size: clamp(3.5rem, 7vw, 6rem);
   line-height: 90%;
 }
