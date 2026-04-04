@@ -2120,7 +2120,7 @@ function App() {
         liveState={liveState}
         loggedIn={loggedIn}
         onOpenControl={() => changeMode("control")}
-        onStartOAuthGrant={() => startOAuthGrant("/control")}
+        onStartOAuthGrant={() => startOAuthGrant()}
       />
     );
   }
@@ -2153,7 +2153,7 @@ function App() {
       onOpenClaimRules={openClaimRules}
       onLogout={handleLogout}
       onOpenBookList={openBookList}
-      onStartOAuthGrant={startOAuthGrant}
+      onStartOAuthGrant={() => startOAuthGrant()}
       onToggleClaimNotifications={toggleClaimNotifications}
       showClaimQr={showClaimQr}
     />
