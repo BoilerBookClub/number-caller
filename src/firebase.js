@@ -313,6 +313,7 @@ export const claimEventNumber = async ({
       email: email ?? null,
       eventId,
       isMember: isMember ?? false,
+      itemClaimedAtMsHistory: [],
       itemsClaimedCount: 0,
       number,
       participantType,
@@ -386,7 +387,13 @@ export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
       };
     }
 
+    const nextItemClaimedAtMsHistory = [
+      ...(Array.isArray(claim.itemClaimedAtMsHistory) ? claim.itemClaimedAtMsHistory : []),
+      Date.now(),
+    ];
+
     transaction.update(claimRef, {
+      itemClaimedAtMsHistory: nextItemClaimedAtMsHistory,
       itemsClaimedCount: (claim.itemsClaimedCount ?? 0) + 1,
       redeemedAt: serverTimestamp(),
       redeemedRound: currentRound,

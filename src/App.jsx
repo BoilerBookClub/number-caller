@@ -42,11 +42,21 @@ import useDiscordLogin from "./useDiscordLogin";
 
 const defaultQrUrl =
   "https://www.boilerbookclub.com/announcements/";
+const QUEUE_SIZE = 10;
 
 const initialState = {
   title: "BOILER BOOK CLUB EVENT",
   titleFont: DEFAULT_TITLE_FONT,
   qrUrl: defaultQrUrl,
+  autoAdvanceEnabled: false,
+  autoAdvanceBacklogLimitEnabled: false,
+  autoAdvanceBacklogLimit: 10,
+  autoAdvanceFinalCall: true,
+  autoAdvanceFinalCallTimerEnabled: false,
+  autoAdvanceFinalCallTimerMinutes: 5,
+  autoAdvanceNextGroup: true,
+  autoAdvanceStartRound: true,
+  autoAdvanceThresholdPercent: 0,
   memberCheckInLeadMinutes: 15,
   current: 0,
   groupStartedAt: null,
@@ -75,10 +85,82 @@ const normalizeMemberCheckInLeadMinutes = (value) => {
   return parsedValue;
 };
 
-const normalizeState = (nextState) => ({
-  ...initialState,
-  ...nextState,
-});
+const normalizeAutoAdvanceThresholdPercent = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 100) {
+    return initialState.autoAdvanceThresholdPercent;
+  }
+
+  return parsedValue;
+};
+
+const normalizeAutoAdvanceTimerMinutes = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 240) {
+    return initialState.autoAdvanceFinalCallTimerMinutes;
+  }
+
+  return parsedValue;
+};
+
+const normalizeAutoAdvanceBacklogLimit = (value) => {
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 500) {
+    return initialState.autoAdvanceBacklogLimit;
+  }
+
+  return parsedValue;
+};
+
+const normalizeState = (nextState) => {
+  const mergedState = {
+    ...initialState,
+    ...nextState,
+  };
+  const normalizedThreshold = normalizeAutoAdvanceThresholdPercent(
+    mergedState.autoAdvanceThresholdPercent,
+  );
+  const normalizedTimerMinutes = normalizeAutoAdvanceTimerMinutes(
+    mergedState.autoAdvanceFinalCallTimerMinutes,
+  );
+  const normalizedBacklogLimit = normalizeAutoAdvanceBacklogLimit(
+    mergedState.autoAdvanceBacklogLimit,
+  );
+
+  return {
+    ...mergedState,
+    autoAdvanceEnabled:
+      typeof mergedState.autoAdvanceEnabled === "boolean"
+        ? mergedState.autoAdvanceEnabled
+        : normalizedThreshold > 0,
+    autoAdvanceFinalCall:
+      typeof mergedState.autoAdvanceFinalCall === "boolean"
+        ? mergedState.autoAdvanceFinalCall
+        : initialState.autoAdvanceFinalCall,
+    autoAdvanceBacklogLimitEnabled:
+      typeof mergedState.autoAdvanceBacklogLimitEnabled === "boolean"
+        ? mergedState.autoAdvanceBacklogLimitEnabled
+        : initialState.autoAdvanceBacklogLimitEnabled,
+    autoAdvanceBacklogLimit: normalizedBacklogLimit,
+    autoAdvanceFinalCallTimerEnabled:
+      typeof mergedState.autoAdvanceFinalCallTimerEnabled === "boolean"
+        ? mergedState.autoAdvanceFinalCallTimerEnabled
+        : initialState.autoAdvanceFinalCallTimerEnabled,
+    autoAdvanceFinalCallTimerMinutes: normalizedTimerMinutes,
+    autoAdvanceNextGroup:
+      typeof mergedState.autoAdvanceNextGroup === "boolean"
+        ? mergedState.autoAdvanceNextGroup
+        : initialState.autoAdvanceNextGroup,
+    autoAdvanceStartRound:
+      typeof mergedState.autoAdvanceStartRound === "boolean"
+        ? mergedState.autoAdvanceStartRound
+        : initialState.autoAdvanceStartRound,
+    autoAdvanceThresholdPercent: normalizedThreshold,
+  };
+};
 
 const normalizeLiveEvent = (nextEvent) => ({
   active: false,
@@ -92,6 +174,39 @@ const normalizeLiveEvent = (nextEvent) => ({
   ...nextEvent,
   state: normalizeState(nextEvent?.state),
 });
+
+const getTimestampMs = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const parsedValue = Date.parse(value);
+
+  return Number.isNaN(parsedValue) ? null : parsedValue;
+};
+
+const getTimestampMsList = (values) => {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => getTimestampMs(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((leftValue, rightValue) => leftValue - rightValue);
+};
 
 const normalizeClaimRecord = (claimId, nextClaim) => {
   if (!nextClaim) {
@@ -141,12 +256,15 @@ const normalizeRosterClaim = (nextClaim, userProfilesByUserId) => {
   return {
     claimId: nextClaim.claimId,
     avatarUrl: profile?.avatarUrl ?? "",
+    claimedAtMs: getTimestampMs(nextClaim.claimedAt),
     displayName: resolvedDisplayName,
     eventId: nextClaim.eventId ?? null,
     isMember: nextClaim.isMember ?? false,
+    itemClaimedAtMsHistory: getTimestampMsList(nextClaim.itemClaimedAtMsHistory),
     itemsClaimedCount: nextClaim.itemsClaimedCount ?? 0,
     number: nextClaim.number ?? 0,
     participantType: nextClaim.participantType ?? "discord",
+    redeemedAtMs: getTimestampMs(nextClaim.redeemedAt),
     redeemedRound: nextClaim.redeemedRound ?? 0,
   };
 };
@@ -407,6 +525,7 @@ function App() {
   const [claimAccessStatus, setClaimAccessStatus] = useState("");
   const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const autoAdvanceQueueKeyRef = useRef("");
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
   const previousClaimFeedSnapshotRef = useRef(null);
@@ -433,7 +552,7 @@ function App() {
   const previousIsEventLiveRef = useRef(initialState.active ?? false);
   const previousLiveEventTitleRef = useRef(initialState.title);
   const liveState = liveEvent.state;
-  const { current, finalCall: isFinalCall } = liveState;
+  const { current, finalCall: isFinalCall, last } = liveState;
   const displayUrl = getScreenUrl("display");
   const isCheckingAccess = authLoading || roleLoading || (loggedIn && !accessResolved);
   const isEventLive = liveEvent.active;
@@ -526,13 +645,41 @@ function App() {
       currentEventClaims.find((claim) => claim.claimId === claimId) ?? null,
     )
     .filter(Boolean);
+  const finalCallTargetClaimIdSet = new Set(liveState.finalCallTargetClaimIds ?? []);
+  const backlogClaims = currentEventClaims.filter((claim) => {
+    if (claim.redeemedRound === currentRound) {
+      return false;
+    }
+
+    if (liveState.finalCall) {
+      return finalCallTargetClaimIdSet.has(claim.claimId);
+    }
+
+    return liveState.current > 0 && claim.number <= liveState.last;
+  });
   const activeQueueElapsedLabel =
     liveState.groupStartedAt && (liveState.finalCall || liveState.current > 0)
       ? formatElapsedDuration(Math.max(0, currentTime - liveState.groupStartedAt))
       : "";
   const activeQueueClaims = liveState.finalCall ? finalCallTargetClaims : currentGroupClaims;
+  const backlogCount = backlogClaims.length;
+  const finalCallTargetClaimIdsKey = (liveState.finalCallTargetClaimIds ?? []).join(",");
+  const activeQueueClaimedCount = activeQueueClaims.filter(
+    (claim) => claim.redeemedRound === currentRound,
+  ).length;
   const isLastGroup =
     !liveState.finalCall && liveState.current > 0 && liveState.current >= totalPeopleWithNumbers;
+  const autoAdvanceThresholdPercent = normalizeAutoAdvanceThresholdPercent(
+    liveState.autoAdvanceThresholdPercent,
+  );
+  const autoAdvanceThresholdRatio = autoAdvanceThresholdPercent / 100;
+  const autoAdvanceBacklogLimit = normalizeAutoAdvanceBacklogLimit(
+    liveState.autoAdvanceBacklogLimit,
+  );
+  const autoAdvanceFinalCallTimerMinutes = normalizeAutoAdvanceTimerMinutes(
+    liveState.autoAdvanceFinalCallTimerMinutes,
+  );
+  const autoAdvanceFinalCallTimerMs = autoAdvanceFinalCallTimerMinutes * 60 * 1000;
   const queueTitle = liveState.finalCall
     ? "Final Call"
     : liveState.current === 0
@@ -1466,7 +1613,7 @@ function App() {
     username,
   ]);
 
-  const persistState = async (newState) => {
+  const persistState = useCallback(async (newState) => {
     const nextState = normalizeState(newState);
     setLiveEvent((currentEvent) => ({
       ...currentEvent,
@@ -1483,9 +1630,9 @@ function App() {
       console.error(error.message || "Unable to sync live event state.");
       setControlMessage(error.message || "Unable to sync live event state.");
     }
-  };
+  }, [isEventLive]);
 
-  const increment = (amount) => {
+  const increment = useCallback((amount) => {
     if (liveState.current === 0 && totalPeopleWithNumbers === 0) {
       setControlMessage("At least one attendee must claim a number before starting a round.");
       return;
@@ -1501,9 +1648,71 @@ function App() {
       groupStartedAt,
       last: liveState.current,
     });
-  };
+  }, [liveState, persistState, totalPeopleWithNumbers]);
 
-  const newRound = () => {
+  const startRoundQueue = useCallback((nextRound = false) => {
+    if (totalPeopleWithNumbers === 0) {
+      return;
+    }
+
+    setControlMessage("");
+    const groupStartedAt = Date.now();
+    persistState({
+      ...liveState,
+      current: QUEUE_SIZE,
+      finalCall: false,
+      finalCallTargetClaimIds: [],
+      groupStartedAt,
+      last: 0,
+      round: nextRound ? liveState.round + 1 : liveState.round,
+    });
+  }, [liveState, persistState, totalPeopleWithNumbers]);
+
+  const updateAutoAdvanceThresholdPercent = useCallback((value) => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      autoAdvanceThresholdPercent: normalizeAutoAdvanceThresholdPercent(value),
+    });
+  }, [liveState, persistState]);
+
+  const updateAutoAdvanceTimerMinutes = useCallback((value) => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      autoAdvanceFinalCallTimerMinutes: normalizeAutoAdvanceTimerMinutes(value),
+    });
+  }, [liveState, persistState]);
+
+  const updateAutoAdvanceBacklogLimit = useCallback((value) => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      autoAdvanceBacklogLimit: normalizeAutoAdvanceBacklogLimit(value),
+    });
+  }, [liveState, persistState]);
+
+  const toggleAutoAdvanceEnabled = useCallback(() => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      autoAdvanceEnabled: !liveState.autoAdvanceEnabled,
+      autoAdvanceThresholdPercent:
+        !liveState.autoAdvanceEnabled && normalizeAutoAdvanceThresholdPercent(liveState.autoAdvanceThresholdPercent) === 0
+          ? 100
+          : normalizeAutoAdvanceThresholdPercent(liveState.autoAdvanceThresholdPercent),
+    });
+  }, [liveState, persistState]);
+
+  const updateAutoAdvanceAction = useCallback((field, value) => {
+    setControlMessage("");
+    persistState({
+      ...liveState,
+      [field]: value,
+    });
+  }, [liveState, persistState]);
+
+  const newRound = useCallback(() => {
     setControlMessage("");
     persistState({
       ...liveState,
@@ -1514,9 +1723,9 @@ function App() {
       last: 0,
       round: liveState.round + 1,
     });
-  };
+  }, [liveState, persistState]);
 
-  const activateFinalCall = () => {
+  const activateFinalCall = useCallback(() => {
     setControlMessage("");
     const groupStartedAt = Date.now();
     persistState({
@@ -1527,7 +1736,128 @@ function App() {
         .map((claim) => claim.claimId),
       groupStartedAt,
     });
-  };
+  }, [currentEventClaims, currentRound, liveState, persistState]);
+
+  useEffect(() => {
+    const queueKey = isFinalCall
+      ? `round:${currentRound}:final:${finalCallTargetClaimIdsKey}`
+      : current === 0
+        ? `round:${currentRound}:pending-start`
+        : `round:${currentRound}:group:${last + 1}-${current}`;
+    const isEmptyFinalCallQueue = isFinalCall && activeQueueClaims.length === 0;
+    const finalCallElapsedMs =
+      isFinalCall && liveState.groupStartedAt
+        ? Math.max(0, currentTime - liveState.groupStartedAt)
+        : 0;
+    const shouldAdvanceFinalCallByTimer =
+      isFinalCall &&
+      liveState.autoAdvanceStartRound &&
+      liveState.autoAdvanceFinalCallTimerEnabled &&
+      autoAdvanceFinalCallTimerMs > 0 &&
+      finalCallElapsedMs >= autoAdvanceFinalCallTimerMs;
+    const isBacklogTooLarge =
+      liveState.autoAdvanceBacklogLimitEnabled && backlogCount > autoAdvanceBacklogLimit;
+
+    if (autoAdvanceQueueKeyRef.current !== queueKey) {
+      autoAdvanceQueueKeyRef.current = "";
+    }
+
+    if (!liveState.autoAdvanceEnabled) {
+      return;
+    }
+
+    if (isBacklogTooLarge) {
+      return;
+    }
+
+    if (!isFinalCall && current === 0) {
+      if (
+        !liveState.autoAdvanceStartRound ||
+        totalPeopleWithNumbers === 0 ||
+        autoAdvanceQueueKeyRef.current === queueKey
+      ) {
+        return;
+      }
+
+      autoAdvanceQueueKeyRef.current = queueKey;
+      startRoundQueue(false);
+      return;
+    }
+
+    if (
+      !shouldAdvanceFinalCallByTimer &&
+      (autoAdvanceThresholdPercent <= 0 ||
+        (!isEmptyFinalCallQueue && activeQueueClaims.length === 0))
+    ) {
+      return;
+    }
+
+    const claimedRatio = isEmptyFinalCallQueue
+      ? 1
+      : activeQueueClaimedCount / activeQueueClaims.length;
+
+    const shouldAdvanceByThreshold = claimedRatio >= autoAdvanceThresholdRatio;
+
+    if (!shouldAdvanceByThreshold && !shouldAdvanceFinalCallByTimer) {
+      return;
+    }
+
+    if (autoAdvanceQueueKeyRef.current === queueKey) {
+      return;
+    }
+
+    if (isFinalCall && !liveState.autoAdvanceStartRound) {
+      return;
+    }
+
+    if (!isFinalCall && isLastGroup && !liveState.autoAdvanceFinalCall) {
+      return;
+    }
+
+    if (!isFinalCall && !isLastGroup && !liveState.autoAdvanceNextGroup) {
+      return;
+    }
+
+    autoAdvanceQueueKeyRef.current = queueKey;
+
+    if (isFinalCall) {
+      startRoundQueue(true);
+      return;
+    }
+
+    if (isLastGroup) {
+      activateFinalCall();
+      return;
+    }
+
+    increment(QUEUE_SIZE);
+  }, [
+    activeQueueClaimedCount,
+    activeQueueClaims.length,
+    activateFinalCall,
+    autoAdvanceBacklogLimit,
+    autoAdvanceFinalCallTimerMs,
+    autoAdvanceThresholdPercent,
+    autoAdvanceThresholdRatio,
+    backlogCount,
+    currentRound,
+    currentTime,
+    finalCallTargetClaimIdsKey,
+    increment,
+    current,
+    isFinalCall,
+    isLastGroup,
+    last,
+    liveState.autoAdvanceEnabled,
+    liveState.autoAdvanceBacklogLimitEnabled,
+    liveState.autoAdvanceFinalCall,
+    liveState.autoAdvanceFinalCallTimerEnabled,
+    liveState.autoAdvanceNextGroup,
+    liveState.groupStartedAt,
+    liveState.autoAdvanceStartRound,
+    startRoundQueue,
+    totalPeopleWithNumbers,
+  ]);
 
   const handleControlFieldChange = (field) => (event) => {
     setControlForm((currentForm) => ({
@@ -1721,18 +2051,29 @@ function App() {
     return (
       <ControlPage
         activeQueueClaims={activeQueueClaims}
+        activeQueueElapsedLabel={activeQueueElapsedLabel}
+        autoAdvanceBacklogLimit={autoAdvanceBacklogLimit}
+        autoAdvanceBacklogLimitEnabled={Boolean(liveState.autoAdvanceBacklogLimitEnabled)}
+        autoAdvanceEnabled={Boolean(liveState.autoAdvanceEnabled)}
+        autoAdvanceFinalCall={Boolean(liveState.autoAdvanceFinalCall)}
+        autoAdvanceFinalCallTimerEnabled={Boolean(liveState.autoAdvanceFinalCallTimerEnabled)}
+        autoAdvanceFinalCallTimerMinutes={autoAdvanceFinalCallTimerMinutes}
+        autoAdvanceNextGroup={Boolean(liveState.autoAdvanceNextGroup)}
+        autoAdvanceStartRound={Boolean(liveState.autoAdvanceStartRound)}
+        backlogClaims={backlogClaims}
         controlForm={controlForm}
         controlMessage={controlMessage}
         controlSaving={controlSaving}
         currentEventClaims={currentEventClaims}
         currentRound={currentRound}
+        autoAdvanceThresholdPercent={autoAdvanceThresholdPercent}
         isEventDetailsModalOpen={isEventDetailsModalOpen}
         isEventLive={isEventLive}
         isLastGroup={isLastGroup}
         liveEvent={liveEvent}
         liveState={liveState}
         onActivateFinalCall={activateFinalCall}
-        activeQueueElapsedLabel={activeQueueElapsedLabel}
+        onAutoAdvanceActionChange={updateAutoAdvanceAction}
         onCloseEvent={handleCloseEvent}
         onCloseEventDetails={closeEventDetailsModal}
         onCloseScanner={() => setScannerActive(false)}
@@ -1746,8 +2087,12 @@ function App() {
           setScanFeedback(null);
           setScannerActive(true);
         }}
+        onAutoAdvanceBacklogLimitChange={updateAutoAdvanceBacklogLimit}
+        onAutoAdvanceTimerMinutesChange={updateAutoAdvanceTimerMinutes}
+        onAutoAdvanceThresholdChange={updateAutoAdvanceThresholdPercent}
         onSaveEventDetails={handleSaveEventDetails}
         onStartEvent={handleStartEvent}
+        onToggleAutoAdvance={toggleAutoAdvanceEnabled}
         queueDescription={queueDescription}
         queueTitle={queueTitle}
         scanFeedback={scanFeedback}
