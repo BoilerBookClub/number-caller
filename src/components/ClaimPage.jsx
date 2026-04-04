@@ -1,7 +1,10 @@
 import QRCode from "react-qr-code";
 import bbcLogo from "../assets/bbc_logo.png";
+import displayIcon from "../assets/display.svg";
 import infoIcon from "../assets/info.svg";
 import notificationIcon from "../assets/notification.svg";
+import scanIcon from "../assets/scan.svg";
+import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName } from "../titleFonts";
 
 function ClaimRulesModal({
@@ -88,7 +91,7 @@ function ClaimResultCard({
         {claimResult.number}
       </div>
       <p>
-        {!showClaimQr && "Your spot is saved. Watch the display screen to see when your number is called."}
+        {!showClaimQr && "Watch the display screen to see when your number is called."}
       </p>
       {isClaimActive ? (
         <div className="claim-qr-inline-block">
@@ -117,8 +120,7 @@ function ClaimResultCard({
         {claimRecord ? (
           showClaimQr ? null : hasClaimedCurrentRound ? (
             <p className="status-message status-message--success">
-              You already claimed one item in round {currentRound}. Your QR code will
-              return when the next round reaches your number again.
+              You already claimed an item in round {currentRound}. Your QR code will return when the next round reaches your number again.
             </p>
           ) : (
             <p>
@@ -134,6 +136,7 @@ function ClaimResultCard({
 }
 
 function MemberClaimCard({
+  allowManualClaim,
   authError,
   claimError,
   claimLoading,
@@ -148,6 +151,7 @@ function MemberClaimCard({
   loggedIn,
   memberEarlyAccessLabel,
   memberEarlyAccessTime,
+  onManualClaim,
   onLogout,
   onStartOAuthGrant,
 }) {
@@ -157,7 +161,11 @@ function MemberClaimCard({
       <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
       {liveEvent.timeframeLabel ? <p>{liveEvent.timeframeLabel}</p> : null}
       <h2>Claim Your Number</h2>
-      <p>Log in with Discord and we'll assign your number automatically.</p>
+      <p>
+        {allowManualClaim
+          ? "Log in with Discord, then click Give Me a Number when you're ready."
+          : "Log in with Discord and we'll assign your number automatically."}
+      </p>
       {!loggedIn ? (
         <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
           {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
@@ -175,12 +183,23 @@ function MemberClaimCard({
       ) : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult ? (
         <p>
-          {isMember
-            ? isEventStarted
-              ? "Logged in with the member role. Your claim will be assigned automatically."
-              : "Logged in with the member role. Early claim access is open, so your claim will be assigned automatically."
-            : "Logged in. The event has started, so your claim will be assigned automatically."}
+          {allowManualClaim
+            ? isMember
+              ? isEventStarted
+                ? "Logged in with the member role. Click Give Me a Number when you want to join the line."
+                : "Logged in with the member role. Early claim access is open, so you can click Give Me a Number whenever you're ready."
+              : "Logged in. The event has started, so you can click Give Me a Number whenever you're ready."
+            : isMember
+              ? isEventStarted
+                ? "Logged in with the member role. Your claim will be assigned automatically."
+                : "Logged in with the member role. Early claim access is open, so your claim will be assigned automatically."
+              : "Logged in. The event has started, so your claim will be assigned automatically."}
         </p>
+      ) : null}
+      {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult && allowManualClaim ? (
+        <button type="button" onClick={onManualClaim}>
+          Give Me a Number
+        </button>
       ) : null}
       {claimError ? <p className="entry-message">{claimError}</p> : null}
       {loggedIn ? (
@@ -193,13 +212,40 @@ function MemberClaimCard({
 }
 
 function ClaimPage(props) {
-  const { claimResult, isClaimRulesOpen } = props;
+  const {
+    claimResult,
+    isClaimRulesOpen,
+    onOpenClaimScanner,
+    onOpenControlPanel,
+    onOpenDisplayScreen,
+    showControlNavbar,
+  } = props;
 
   return (
     <div className="claim-page claim-page--focused">
-      {claimResult ? <ClaimResultCard {...props} /> : null}
+      {claimResult ? (
+        <div style={showControlNavbar ? { marginBottom: '6.5rem' } : undefined}>
+          <ClaimResultCard {...props} />
+        </div>
+      ) : null}
       {!claimResult ? <MemberClaimCard {...props} /> : null}
       {claimResult && isClaimRulesOpen ? <ClaimRulesModal {...props} /> : null}
+      {showControlNavbar ? (
+        <div className="bottom-navbar">
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenClaimScanner}>
+            <img src={scanIcon} alt="" className="button-icon" />
+            <span>Open Scanner</span>
+          </button>
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
+            <img src={settingsIcon} alt="" className="button-icon" />
+            <span>Control Panel</span>
+          </button>
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+            <img src={displayIcon} alt="" className="button-icon" />
+            <span>Open Display</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

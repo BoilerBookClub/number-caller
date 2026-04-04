@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import autoIcon from "../assets/auto.png";
+import autoIcon from "../assets/skip.svg";
 import displayIcon from "../assets/display.svg";
 import editIcon from "../assets/edit.svg";
 import expandIcon from "../assets/expand.svg";
 import graphIcon from "../assets/graph.svg";
 import groupIcon from "../assets/group.svg";
+import numberIcon from "../assets/number.svg";
 import scanIcon from "../assets/scan.svg";
 import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
@@ -935,6 +936,7 @@ function ControlPage({
   controlSaving,
   currentEventClaims,
   currentRound,
+  hasPersonalClaim,
   isEventDetailsModalOpen,
   isEventLive,
   isLastGroup,
@@ -953,6 +955,7 @@ function ControlPage({
   onOpenDisplayScreen,
   onOpenEventDetails,
   onOpenScanner,
+  onOpenSelfClaim,
   onCloseScanner,
   onNewRound,
   onGroupSizeChange,
@@ -1095,13 +1098,8 @@ function ControlPage({
         <>
           <div className={`control-dashboard${isEventDetailsModalOpen ? " control-dashboard--blurred" : ""}`}>
             <div className="control-event-header">
+            <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
               <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
-              <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
-              <p className="control-event-subtitle control-event-link">
-                <a href={liveState.qrUrl} target="_blank" rel="noreferrer">
-                  {liveState.qrUrl}
-                </a>
-              </p>
               <div className="control-actions control-actions--header">
                 <button
                   className="secondary-button icon-button control-side-action"
@@ -1395,6 +1393,10 @@ function ControlPage({
           >
             <img src={scanIcon} alt="" className="button-icon" />
             <span>Open Scanner</span>
+          </button>
+          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenSelfClaim}>
+            <img src={numberIcon} alt="" className="button-icon" />
+            <span>{hasPersonalClaim ? "My Number" : "Get My Number"}</span>
           </button>
           <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
             <img src={displayIcon} alt="" className="button-icon" />

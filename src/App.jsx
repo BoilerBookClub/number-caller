@@ -327,20 +327,74 @@ const formatTimeRange = (start, end) => {
   return `${formatClockTime(start)} - ${formatClockTime(end)}`;
 };
 
-const getTodayTime = (value) => {
+const getTimeParts = (value) => {
   if (!value) {
     return null;
   }
 
-  const date = new Date();
   const [hours, minutes] = value.split(":").map(Number);
 
   if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return null;
   }
 
-  date.setHours(hours, minutes, 0, 0);
-  return date;
+  return { hours, minutes };
+};
+
+const setDateToTime = (date, value) => {
+  const timeParts = getTimeParts(value);
+
+  if (!timeParts) {
+    return null;
+  }
+
+  const nextDate = new Date(date);
+
+  nextDate.setHours(timeParts.hours, timeParts.minutes, 0, 0);
+  return nextDate;
+};
+
+const getEventSchedule = ({ memberCheckInLeadMinutes, now, startedAt, timeframeEnd, timeframeStart }) => {
+  const referenceTimestamp = getTimestampMs(startedAt) ?? now;
+
+  if (!referenceTimestamp) {
+    return {
+      eventEndTime: null,
+      eventStartTime: null,
+      memberEarlyAccessTime: null,
+    };
+  }
+
+  const referenceDate = new Date(referenceTimestamp);
+  let eventStartTime = setDateToTime(referenceDate, timeframeStart);
+  let eventEndTime = setDateToTime(referenceDate, timeframeEnd);
+
+  if (!eventStartTime || !eventEndTime) {
+    return {
+      eventEndTime,
+      eventStartTime,
+      memberEarlyAccessTime: eventStartTime
+        ? new Date(eventStartTime.getTime() - memberCheckInLeadMinutes * 60 * 1000)
+        : null,
+    };
+  }
+
+  if (eventEndTime <= eventStartTime) {
+    eventEndTime.setDate(eventEndTime.getDate() + 1);
+  }
+
+  if (referenceTimestamp > eventEndTime.getTime()) {
+    eventStartTime.setDate(eventStartTime.getDate() + 1);
+    eventEndTime.setDate(eventEndTime.getDate() + 1);
+  }
+
+  return {
+    eventEndTime,
+    eventStartTime,
+    memberEarlyAccessTime: new Date(
+      eventStartTime.getTime() - memberCheckInLeadMinutes * 60 * 1000,
+    ),
+  };
 };
 
 const buildEventId = () =>
@@ -536,6 +590,7 @@ function App() {
   );
   const [claimAccessGranted, setClaimAccessGranted] = useState(false);
   const [claimAccessStatus, setClaimAccessStatus] = useState("");
+  const [isStaffSelfClaimMode, setIsStaffSelfClaimMode] = useState(false);
   const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const autoAdvanceQueueKeyRef = useRef("");
@@ -577,14 +632,16 @@ function App() {
   const isEventLive = liveEvent.active;
   const qrCodeValue = liveState.qrUrl.trim() || defaultQrUrl;
   const currentRound = liveState.round;
-  const eventStartTime = getTodayTime(liveEvent.timeframeStart);
-  const eventEndTime = getTodayTime(liveEvent.timeframeEnd);
   const memberCheckInLeadMinutes = normalizeMemberCheckInLeadMinutes(
     liveState.memberCheckInLeadMinutes,
   );
-  const memberEarlyAccessTime = eventStartTime
-    ? new Date(eventStartTime.getTime() - memberCheckInLeadMinutes * 60 * 1000)
-    : null;
+  const { eventEndTime, eventStartTime, memberEarlyAccessTime } = getEventSchedule({
+    memberCheckInLeadMinutes,
+    now: currentTime,
+    startedAt: liveEvent.startedAt,
+    timeframeEnd: liveEvent.timeframeEnd,
+    timeframeStart: liveEvent.timeframeStart,
+  });
   const hasEventTimeEnded = Boolean(eventEndTime) && currentTime >= eventEndTime.getTime();
   const isAttendeeEventLive = isEventLive && !hasEventTimeEnded;
   const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
@@ -625,6 +682,7 @@ function App() {
     liveEvent.eventId && attendeeClaimKey
       ? buildClaimId(liveEvent.eventId, attendeeClaimKey)
       : persistedAttendeeClaimId || claimResult?.claimId || "";
+  const hasManualStaffClaimAccess = hasTrustedStaffAccess && isStaffSelfClaimMode;
   const claimRulesAcknowledgedKey =
     liveEvent.eventId && attendeeClaimId
       ? buildClaimRulesAcknowledgedKey(liveEvent.eventId, attendeeClaimId)
@@ -721,7 +779,13 @@ function App() {
     attendeeClaimNumber <= liveState.current;
   const shouldCelebrateCurrentCall = isDisplayRoute || isAttendeeClaimRoute;
   const shouldRedirectToControl =
-    loggedIn && hasTrustedStaffAccess && !isCheckingAccess && mode === null && !claimAccessCode;
+    loggedIn &&
+    hasTrustedStaffAccess &&
+    !isCheckingAccess &&
+    mode === null &&
+    !claimAccessCode &&
+    !hasManualStaffClaimAccess &&
+    !effectiveClaimResult;
   const shouldLockBackgroundScroll =
     (mode === null && Boolean(claimResult) && isClaimRulesOpen) ||
     (mode === "control" && isEventLive && isEventDetailsModalOpen);
@@ -757,8 +821,14 @@ function App() {
     clearClaimAccessGrant();
     clearConfirmedClaimAccess();
     clearPersistedClaimSession();
+    setIsStaffSelfClaimMode(false);
     logout();
   }, [logout]);
+
+  const openStaffSelfClaim = useCallback(() => {
+    setIsStaffSelfClaimMode(true);
+    changeMode(null);
+  }, [changeMode]);
 
   const resetClaimFlow = () => {
     setAreClaimNotificationsEnabled(false);
@@ -767,6 +837,7 @@ function App() {
     setClaimError("");
     setClaimLoading(false);
     setIsClaimRulesOpen(false);
+    setIsStaffSelfClaimMode(false);
     clearPersistedClaimSession();
   };
 
@@ -1192,6 +1263,49 @@ function App() {
     });
   }, [claimAccessGranted, liveEvent.eventId, loggedIn, user]);
 
+  const assignDiscordNumber = useCallback(async () => {
+    if (
+      claimLoading ||
+      !loggedIn ||
+      !hasTrustedAttendeeAccess ||
+      !liveEvent.eventId ||
+      !user
+    ) {
+      return;
+    }
+
+    setClaimLoading(true);
+
+    try {
+      const result = await claimEventNumber({
+        claimKey: `discord:${user}`,
+        avatarUrl,
+        discordUserId: user,
+        displayName: username || user,
+        eventId: liveEvent.eventId,
+        isMember,
+        participantType: "discord",
+      });
+
+      setClaimResult(result);
+      setClaimError("");
+      setIsStaffSelfClaimMode(false);
+    } catch (error) {
+      setClaimError(error.message || "Unable to assign a number right now.");
+    } finally {
+      setClaimLoading(false);
+    }
+  }, [
+    avatarUrl,
+    claimLoading,
+    hasTrustedAttendeeAccess,
+    isMember,
+    liveEvent.eventId,
+    loggedIn,
+    user,
+    username,
+  ]);
+
   useEffect(() => {
     if (!isAttendeeEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
       setClaimAccessGranted(false);
@@ -1418,44 +1532,17 @@ function App() {
       return;
     }
 
-    const assignDiscordNumber = async () => {
-      setClaimLoading(true);
-
-      try {
-        const result = await claimEventNumber({
-          claimKey: `discord:${user}`,
-          avatarUrl,
-          discordUserId: user,
-          displayName: username || user,
-          eventId: liveEvent.eventId,
-          isMember,
-          participantType: "discord",
-        });
-
-        setClaimResult(result);
-        setClaimError("");
-      } catch (error) {
-        setClaimError(error.message || "Unable to assign a number right now.");
-      } finally {
-        setClaimLoading(false);
-      }
-    };
-
     void assignDiscordNumber();
   }, [
+    assignDiscordNumber,
     claimLoading,
     claimAccessGranted,
     effectiveClaimResult,
     isClaimWindowOpen,
     isCheckingAccess,
     isAttendeeEventLive,
-    isMember,
-    liveEvent.eventId,
     loggedIn,
     hasTrustedAttendeeAccess,
-    avatarUrl,
-    user,
-    username,
   ]);
 
   const persistState = useCallback(async (newState) => {
@@ -1730,8 +1817,8 @@ function App() {
       return "Add both a start time and an end time.";
     }
 
-    if (controlForm.timeframeEnd <= controlForm.timeframeStart) {
-      return "The end time must be after the start time.";
+    if (controlForm.timeframeEnd === controlForm.timeframeStart) {
+      return "The start time and end time cannot be the same.";
     }
 
     return "";
@@ -1926,6 +2013,7 @@ function App() {
           currentEventClaims={currentEventClaims}
           currentRound={currentRound}
           autoAdvanceThresholdPercent={autoAdvanceThresholdPercent}
+          hasPersonalClaim={Boolean(effectiveClaimResult)}
           isEventDetailsModalOpen={isEventDetailsModalOpen}
           isEventLive={isEventLive}
           isLastGroup={isLastGroup}
@@ -1946,6 +2034,7 @@ function App() {
             setScanFeedback(null);
             setScannerActive(true);
           }}
+          onOpenSelfClaim={openStaffSelfClaim}
           onAutoAdvanceBacklogLimitChange={updateAutoAdvanceBacklogLimit}
           onGroupSizeChange={updateGroupSize}
           onAutoAdvanceTimerMinutesChange={updateAutoAdvanceTimerMinutes}
@@ -1965,7 +2054,7 @@ function App() {
     );
   }
 
-  if (!isAttendeeEventLive) {
+  if (!isAttendeeEventLive && !effectiveClaimResult && !hasManualStaffClaimAccess) {
     return (
       <ClosedEventPage
         authError={authError}
@@ -1980,7 +2069,7 @@ function App() {
     );
   }
 
-  if (!claimAccessGranted && !effectiveClaimResult) {
+  if (!claimAccessGranted && !effectiveClaimResult && !hasManualStaffClaimAccess) {
     return (
       <ClaimAccessGatePage
         authError={authError}
@@ -1999,6 +2088,7 @@ function App() {
 
   return (
     <ClaimPage
+      allowManualClaim={hasManualStaffClaimAccess && !claimAccessGranted}
       authError={authError}
       areClaimNotificationsEnabled={areClaimNotificationsEnabled}
       claimError={claimError}
@@ -2022,11 +2112,19 @@ function App() {
       memberEarlyAccessTime={memberEarlyAccessTime}
       notificationPermission={notificationPermission}
       onAcknowledgeRules={acknowledgeClaimRules}
+      onManualClaim={assignDiscordNumber}
       onOpenClaimRules={openClaimRules}
+      onOpenClaimScanner={() => {
+        setScanFeedback(null);
+        setScannerActive(true);
+      }}
+      onOpenControlPanel={() => changeMode("control")}
+      onOpenDisplayScreen={openDisplayScreen}
       onLogout={handleLogout}
       onOpenBookList={openBookList}
       onStartOAuthGrant={() => startOAuthGrant()}
       onToggleClaimNotifications={toggleClaimNotifications}
+      showControlNavbar={hasTrustedStaffAccess}
       showClaimQr={showClaimQr}
     />
   );
