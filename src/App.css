@@ -21,6 +21,9 @@ body.modal-scroll-locked {
 
 #root:has(.display) {
   max-width: 100000rem;
+  min-height: 100vh;
+  padding: 0;
+  overflow: hidden;
 }
 
 .mode-select,
@@ -32,7 +35,53 @@ body.modal-scroll-locked {
 }
 
 .display {
-  padding-bottom: 15rem;
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.display-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  align-items: center;
+}
+
+.display-header-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-self: center;
+  align-self: center;
+  gap: 0.35rem;
+}
+
+.display-header-group .eyebrow {
+  margin: 0;
+}
+
+.display-call-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.display-round {
+  margin: 0;
+  color: #7b5200;
+}
+
+.display-call-subtitle {
+  margin: 0;
+  color: #7b5200;
+}
+
+.display-stage-spacer {
+  width: 100%;
 }
 
 .control {
@@ -1978,7 +2027,7 @@ button:disabled {
 }
 
 .carnival {
-  margin: 0 0 5rem;
+  margin: 0 0 0rem;
   font-size: clamp(3.5rem, 7vw, 6rem);
   line-height: 90%;
 }
@@ -1991,7 +2040,7 @@ button:disabled {
 }
 
 .display-main {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
 }
 
 .display-claim-qr-row {
@@ -2065,16 +2114,24 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.display-logo-wrap {
-  display: flex;
+.display-title-row {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  margin-bottom: 0.75rem;
+  gap: 1rem;
+  margin: 0 auto 0.35rem;
+  max-width: 100%;
+}
+
+.display-title-row h1 {
+  margin: 0;
 }
 
 .display-logo {
   display: block;
-  width: clamp(4rem, 10vw, 6.5rem);
-  height: clamp(4rem, 10vw, 6.5rem);
+  width: clamp(3.5rem, 8vw, 5.5rem);
+  height: clamp(3.5rem, 8vw, 5.5rem);
+  flex: 0 0 auto;
   object-fit: contain;
 }
 
@@ -2353,8 +2410,17 @@ li {
     align-items: center;
   }
 
+  .display-stage {
+    grid-template-rows: auto auto 1fr;
+    row-gap: 1.25rem;
+  }
+
+  .display-header-group {
+    margin-top: 0.5rem;
+  }
+
   .display {
-    padding-bottom: 19rem;
+    padding-bottom: 2rem;
   }
 
   .display-claim-qr-row {

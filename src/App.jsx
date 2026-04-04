@@ -1894,6 +1894,7 @@ function App() {
 
   const handleStartEvent = async (event) => {
     event.preventDefault();
+    setControlMessage("");
     const timeframeError = validateTimeframe();
     const memberCheckInLeadMinutesError = validateMemberCheckInLeadMinutes();
 
@@ -1921,6 +1922,7 @@ function App() {
         ),
         timeframeStart: controlForm.timeframeStart,
       });
+      setControlMessage("");
       setIsEventDetailsModalOpen(false);
     } catch (error) {
       setControlMessage(error.message || "Unable to start the event.");

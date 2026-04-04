@@ -26,36 +26,43 @@ function DisplayPage({
 
   return (
     <div className="display">
-      <div className="display-logo-wrap">
-        <img src={bbcLogo} alt="Boiler Book Club logo" className="display-logo" />
-      </div>
-      <p className="eyebrow">{liveEvent.timeframeLabel}</p>
-      <h1 className={getEventTitleClassName(liveState.titleFont, "carnival")}>{liveState.title}</h1>
-      <h2 style={{ color: "#7b5200" }}>ROUND {liveState.round}</h2>
-
-      <div className="display-content-row">
-        <div className="display-main">
-          {liveState.current === 0 && !liveState.finalCall ? (
-            <div className="final-call">
-              <h1>Starting Soon</h1>
-            </div>
-          ) : !liveState.finalCall ? (
-            <>
-              <h1 className="number">
-                {liveState.last + 1}-{liveState.current}
-              </h1>
-              <h2 style={{ color: "#7b5200" }}>may select an item now!</h2>
-            </>
-          ) : (
-            <>
-              <div className="final-call">
-                <h1>FINAL CALL</h1>
-              </div>
-              <h2 style={{ color: "#7b5200" }}>If you have NOT gotten an item yet, please come forward</h2>
-            </>
-          )}
+      <div className="display-stage">
+        <div className="display-header-group">
+          <p className="eyebrow">{liveEvent.timeframeLabel}</p>
+          <div className="display-title-row">
+            <img src={bbcLogo} alt="Boiler Book Club logo" className="display-logo" />
+            <h1 className={getEventTitleClassName(liveState.titleFont, "carnival")}>{liveState.title}</h1>
+          </div>
         </div>
 
+        <div className="display-call-block">
+          <h2 className="display-round">ROUND {liveState.round}</h2>
+          <div className="display-content-row">
+            <div className="display-main">
+              {liveState.current === 0 && !liveState.finalCall ? (
+                <div className="final-call">
+                  <h1>Starting Soon</h1>
+                </div>
+              ) : !liveState.finalCall ? (
+                <>
+                  <h1 className="number">
+                    {liveState.last + 1}-{liveState.current}
+                  </h1>
+                  <h2 className="display-call-subtitle">may select an item now!</h2>
+                </>
+              ) : (
+                <>
+                  <div className="final-call">
+                    <h1>FINAL CALL</h1>
+                  </div>
+                  <h2 className="display-call-subtitle">If you have NOT gotten an item yet, please come forward</h2>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="display-stage-spacer" aria-hidden="true" />
       </div>
 
       {rotatingClaimAccessUrl ? (
