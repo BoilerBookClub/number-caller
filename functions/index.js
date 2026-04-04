@@ -93,18 +93,28 @@ export const exchangeDiscordAccessToken = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "A Discord access token is required.");
   }
 
-  const [userData, guildMemberData] = await Promise.all([
-    fetchDiscordJson({
-      accessToken,
-      path: "/users/@me",
-      errorMessage: "Discord login failed.",
-    }),
-    fetchDiscordJson({
+  const userData = await fetchDiscordJson({
+    accessToken,
+    path: "/users/@me",
+    errorMessage: "Discord login failed.",
+  });
+
+  // Attempt to fetch guild membership info. If the user is not a member
+  // of the target guild (Discord returns 404) treat them as a non-member
+  // instead of failing the entire login flow.
+  let guildMemberData = { roles: [] };
+  try {
+    guildMemberData = await fetchDiscordJson({
       accessToken,
       path: `/users/@me/guilds/${TARGET_GUILD_ID}/member`,
       errorMessage: "Unable to verify Discord membership.",
-    }),
-  ]);
+    });
+  } catch (err) {
+    // If the error was a 404 (not a guild member) or similar, log and
+    // continue treating the user as a non-member.
+    console.warn("Guild membership check failed or user not in guild", { error: err && (err.message || err) });
+    guildMemberData = { roles: [] };
+  }
 
   const roles = Array.isArray(guildMemberData.roles) ? guildMemberData.roles : [];
   const isMember = roles.includes(REQUIRED_ROLE_ID);
