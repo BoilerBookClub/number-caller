@@ -1,19 +1,5 @@
 # Event Pass
 
-This app now supports:
-
-- A public display screen that updates live for everyone watching
-- A control screen that writes the current number range to Firebase
-- Firebase Hosting deployment for a public URL
-
-## Local setup
-
-1. Install dependencies:
-
-```bash
-
-# Event Pass
-
 Event Pass is a real-time event management web app designed for events like book giveaways, raffles, or any scenario where participants are called up in a randomized or sequential order. It provides a seamless experience for both organizers and attendees, with live updates and QR code-based claiming.
 
 ## Key Features
