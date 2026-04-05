@@ -120,6 +120,7 @@ function ClaimAccessGatePage({
             <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
             <span>Event Staff Login</span>
         </h2>
+        <p className="eyebrow">Reserve Your Spot</p>
         {!loggedIn ? (
           <button onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
             {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
