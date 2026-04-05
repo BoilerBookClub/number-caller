@@ -78,6 +78,9 @@ const exchangeDiscordAccessTokenCallable = firebaseEnabled
 const assignPreclaimIfQueuedCallable = firebaseEnabled
   ? httpsCallable(functions, "assignPreclaimIfQueued")
   : null;
+const listPreclaimsCallable = firebaseEnabled ? httpsCallable(functions, "listPreclaims") : null;
+const assignPreclaimAsStaffCallable = firebaseEnabled ? httpsCallable(functions, "assignPreclaimAsStaff") : null;
+const removeClaimCallable = firebaseEnabled ? httpsCallable(functions, "removeClaim") : null;
 const readPreclaimForUserCallable = firebaseEnabled
   ? httpsCallable(functions, "readPreclaimForUser")
   : null;
@@ -120,6 +123,36 @@ export const readPreclaimForUser = async ({ eventId, claimKey }) => {
   }
 
   const result = await readPreclaimForUserCallable({ eventId, claimKey });
+
+  return result.data;
+};
+
+export const readAllPreclaims = async () => {
+  if (!firebaseEnabled || !listPreclaimsCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await listPreclaimsCallable({});
+
+  return result.data?.preclaims ?? [];
+};
+
+export const assignPreclaimAsStaff = async ({ preclaimId }) => {
+  if (!firebaseEnabled || !assignPreclaimAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await assignPreclaimAsStaffCallable({ preclaimId });
+
+  return result.data;
+};
+
+export const removeClaim = async ({ claimId }) => {
+  if (!firebaseEnabled || !removeClaimCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await removeClaimCallable({ claimId });
 
   return result.data;
 };

@@ -106,16 +106,18 @@ function ClaimResultCard({
           Open Book Descriptions
         </button>
       </div>
-      <div className="claim-status-grid">
-        <div className="stat-card">
-          <span>Round</span>
-          <strong>{currentRound}</strong>
+      {!isClaimActive ? (
+        <div className="claim-status-grid">
+          <div className="stat-card">
+            <span>Round</span>
+            <strong>{currentRound}</strong>
+          </div>
+          <div className="stat-card">
+            <span>Currently</span>
+            <strong>{liveCallLabel}</strong>
+          </div>
         </div>
-        <div className="stat-card">
-          <span>Currently</span>
-          <strong>{liveCallLabel}</strong>
-        </div>
-      </div>
+      ) : null}
       <div className={`claim-qr-panel${isClaimActive ? " claim-qr-panel--active" : ""}`}>
         {claimRecord ? (
           showClaimQr ? null : hasClaimedCurrentRound ? (
@@ -143,6 +145,8 @@ function MemberClaimCard({
   claimError,
   claimLoading,
   claimResult,
+  claimRecord,
+  claimPreclaim,
   eventStartLabel,
   isCheckingAccess,
   isClaimWindowOpen,
@@ -162,10 +166,16 @@ function MemberClaimCard({
   return (
     <div className="entry-card claim-modal-card">
       <p className="eyebrow">Live Event</p>
+      <p className="eyebrow">Reserve Your Spot</p>
       {liveEvent.timeframeLabel ? <p style={{ margin: 0 }}>{liveEvent.timeframeLabel}</p> : null}
       <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
       <p>
       </p>
+      {claimPreclaim && !claimRecord ? (
+        <div className="entry-message" style={{ marginTop: 8 }}>
+          You're in the queue to reserve a spot — we'll assign your number when the event opens.
+        </div>
+      ) : null}
       {!loggedIn ? (
         <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
           {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}

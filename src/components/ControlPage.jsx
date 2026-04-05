@@ -433,6 +433,8 @@ function GraphModalOverlay({ children, onClose, title }) {
   );
 }
 
+// Preclaim queue is now embedded inside FullRoster; no modal component needed.
+
 function TimelineChart({
   emptyText,
   isExpanded = false,
@@ -695,7 +697,7 @@ function AttendeeGraphsPanel({
   );
 }
 
-function FullRoster({ claims, isGraphOpen, onToggleGraph }) {
+function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPreclaims, onAssignPreclaimAsStaff, onRemoveClaim, liveEventId, showPreclaimQueue }) {
   const [expandedGraphTone, setExpandedGraphTone] = useState("");
   const [isGraphPanelMounted, setIsGraphPanelMounted] = useState(false);
   const [isNumberClaimsVisible, setIsNumberClaimsVisible] = useState(true);
@@ -727,6 +729,12 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph }) {
       setExpandedGraphTone("");
     }
   }, [expandedGraphTone, isGraphOpen]);
+
+  useEffect(() => {
+    if (showPreclaimQueue && typeof onFetchPreclaims === "function") {
+      void onFetchPreclaims();
+    }
+  }, [showPreclaimQueue, onFetchPreclaims]);
 
   const expandedGraphConfig =
     expandedGraphTone === "claims"
@@ -863,6 +871,21 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph }) {
                   >
                     {claim.isMember ? "Member" : "Not Member"}
                   </span>
+                  <button
+                    type="button"
+                    className="roster-remove-button"
+                    onClick={() => {
+                      if (!onRemoveClaim) return;
+                      const confirmMsg = `Remove ${claim.displayName || 'attendee'} (#${claim.number})?`;
+                      if (window.confirm(confirmMsg)) {
+                        void onRemoveClaim(claim.claimId);
+                      }
+                    }}
+                    title="Remove number"
+                    aria-label={`Remove ${claim.displayName || 'attendee'} (#${claim.number})`}
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
             );
@@ -871,6 +894,61 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph }) {
       ) : (
         <p>No attendees have claimed a number yet.</p>
       )}
+      {showPreclaimQueue ? (
+        <div className="queue-backlog-panel">
+          <h3 className="queue-backlog-title">Preclaim Queue</h3>
+          <div className="queue-summary queue-summary--single" aria-label="Preclaim counts">
+            <div className="queue-summary-card queue-summary-card--alert">
+              <span>Queued</span>
+              <strong>{(preclaims || []).length} waiting</strong>
+            </div>
+          </div>
+          <section>
+            <h4>Members</h4>
+            { (preclaims || []).filter((p) => p.isMember).length === 0 ? (
+              <p>No members in queue.</p>
+            ) : (
+              <div className="roster-list">
+                { (preclaims || []).filter((p) => p.isMember).map((m) => (
+                  <div key={m.preclaimId} className="roster-row" role="listitem">
+                    <div className="roster-primary">
+                      <div className="roster-avatar" aria-hidden="true">
+                        {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="roster-avatar-image" /> : <span className="roster-avatar-fallback">{(m.displayName||'?').charAt(0).toUpperCase()}</span>}
+                      </div>
+                      <span>{m.displayName}</span>
+                    </div>
+                    <div className="roster-meta">
+                      <button className="secondary-button" type="button" onClick={() => onAssignPreclaimAsStaff && onAssignPreclaimAsStaff(m.preclaimId)}>Assign Number</button>
+                    </div>
+                  </div>
+                )) }
+              </div>
+            ) }
+          </section>
+          <section style={{ marginTop: '0.75rem' }}>
+            <h4>Regulars</h4>
+            { (preclaims || []).filter((p) => !p.isMember).length === 0 ? (
+              <p>No regulars in queue.</p>
+            ) : (
+              <div className="roster-list">
+                { (preclaims || []).filter((p) => !p.isMember).map((m) => (
+                  <div key={m.preclaimId} className="roster-row" role="listitem">
+                    <div className="roster-primary">
+                      <div className="roster-avatar" aria-hidden="true">
+                        {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="roster-avatar-image" /> : <span className="roster-avatar-fallback">{(m.displayName||'?').charAt(0).toUpperCase()}</span>}
+                      </div>
+                      <span>{m.displayName}</span>
+                    </div>
+                    <div className="roster-meta">
+                      <button className="secondary-button" type="button" onClick={() => onAssignPreclaimAsStaff && onAssignPreclaimAsStaff(m.preclaimId)}>Assign Number</button>
+                    </div>
+                  </div>
+                )) }
+              </div>
+            ) }
+          </section>
+        </div>
+      ) : null}
       {expandedGraphConfig ? (
         <GraphModalOverlay onClose={() => setExpandedGraphTone("")} title={expandedGraphConfig.title}>
           <TimelineChart
@@ -941,7 +1019,6 @@ function ControlPage({
   isEventDetailsModalOpen,
   isEventLive,
   isLastGroup,
-  liveEvent,
   liveState,
   onActivateFinalCall,
   onAutoAdvanceActionChange,
@@ -956,6 +1033,12 @@ function ControlPage({
   onOpenDisplayScreen,
   onOpenEventDetails,
   onOpenScanner,
+  preclaims,
+  onFetchPreclaims,
+  onAssignPreclaimAsStaff,
+  onRemoveClaim,
+  showPreclaimQueue,
+  liveEvent,
   
   onCloseScanner,
   onNewRound,
@@ -1359,6 +1442,11 @@ function ControlPage({
               claims={currentEventClaims}
               isGraphOpen={isAttendeeGraphOpen}
               onToggleGraph={() => setIsAttendeeGraphOpen((currentValue) => !currentValue)}
+              preclaims={preclaims}
+              onFetchPreclaims={onFetchPreclaims}
+              onAssignPreclaimAsStaff={onAssignPreclaimAsStaff}
+              onRemoveClaim={onRemoveClaim}
+              liveEventId={liveEvent?.eventId}
             />
           </div>
           {isEventDetailsModalOpen ? (

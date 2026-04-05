@@ -1085,6 +1085,37 @@ body.modal-scroll-locked {
   color: #7b5200;
 }
 
+/* Small circular red remove button used in roster rows */
+.roster-remove-button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 999px;
+  background: #c62828; /* match .danger-button background */
+  border: 1px solid #9f1f1f; /* match .danger-button border */
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
+  border-radius: 999px;
+  border: 1px solid #9f1f1f;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.roster-remove-button:hover {
+  background: #b71c1c; /* match danger hover */
+  border-color: #8e1717;
+}
+
+.roster-remove-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(198, 40, 40, 0.14);
+}
+
 .scanner-helper-text {
   color: #5a5a5a;
 }
@@ -2045,6 +2076,7 @@ button:disabled {
   background: #f4f4f4;
   border: 1px solid #c7c7c7;
   color: #111111;
+  border-radius: 999px;
 }
 
 .danger-button {

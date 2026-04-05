@@ -32,6 +32,11 @@ import {
   updateLiveEventDetails,
   assignPreclaimIfQueued,
   updatePreclaimMembership,
+  readAllPreclaims,
+  readClaimOnce,
+  readPreclaimOnce,
+  assignPreclaimAsStaff,
+  removeClaim,
   signInWithDiscordAccessToken,
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
@@ -582,6 +587,8 @@ function App() {
   const [claimResult, setClaimResult] = useState(null);
   const [claimRecord, setClaimRecord] = useState(null);
   const [claimRoster, setClaimRoster] = useState([]);
+  const [claimPreclaims, setClaimPreclaims] = useState([]);
+  const [claimPreclaim, setClaimPreclaim] = useState(null);
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
@@ -806,12 +813,22 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (mode !== "control" || isCheckingAccess || hasTrustedStaffAccess) {
+    // Only redirect away from the control page when we're not on the control
+    // route and access checking has finished AND the user is not logged in
+    // and does not have trusted staff access. This prevents redirecting
+    // logged-in staff off the control page on a refresh when they are
+    // not on the staff allowlist.
+    if (
+      mode !== "control" ||
+      isCheckingAccess ||
+      hasTrustedStaffAccess ||
+      loggedIn
+    ) {
       return;
     }
 
     changeMode(null, { replace: true });
-  }, [changeMode, hasTrustedStaffAccess, isCheckingAccess, mode]);
+  }, [changeMode, hasTrustedStaffAccess, isCheckingAccess, mode, loggedIn]);
 
   const openDisplayScreen = () => {
     window.open(displayUrl, "_blank", "noopener,noreferrer");
@@ -1229,6 +1246,38 @@ function App() {
     });
   }, [attendeeClaimId, hasTrustedAttendeeAccess]);
 
+  // Keep the attendee's preclaim in state while awaiting the claim document.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!attendeeClaimId || !loggedIn || !liveEvent.eventId) {
+      setClaimPreclaim(null);
+      return undefined;
+    }
+
+    // If they've already been assigned a claim, clear any preclaim state.
+    if (claimRecord && claimRecord.claimId === attendeeClaimId) {
+      setClaimPreclaim(null);
+      return undefined;
+    }
+
+    const fetchPreclaim = async () => {
+      try {
+        const preclaim = await readPreclaimOnce({ claimId: attendeeClaimId });
+        if (!cancelled) setClaimPreclaim(preclaim ?? null);
+      } catch (e) {
+        console.warn('readPreclaimOnce failed', e?.message || e);
+        if (!cancelled) setClaimPreclaim(null);
+      }
+    };
+
+    void fetchPreclaim();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attendeeClaimId, loggedIn, liveEvent.eventId, claimRecord]);
+
   useEffect(() => {
     if (!loggedIn || !user) {
       clearPersistedClaimSession();
@@ -1291,6 +1340,15 @@ function App() {
             memberEligibleAt: memberEarlyAccessTime ? memberEarlyAccessTime.getTime() : null,
             participantType: "discord",
           });
+          // Immediately attempt to read the preclaim we just enqueued so the
+          // attendee can see their queued state without waiting for staff
+          // refresh or the event start.
+          try {
+            const preclaim = await readPreclaimOnce({ claimId: buildClaimId(liveEvent.eventId, `discord:${user}`) });
+            setClaimPreclaim(preclaim ?? null);
+          } catch (e) {
+            console.warn('enqueuePreclaim: readPreclaimOnce failed', e?.message || e);
+          }
         }
       } catch (e) {
         // Non-fatal: continue without blocking the UI
@@ -1352,6 +1410,17 @@ function App() {
       console.debug("assignDiscordNumber: success", result);
 
       setClaimResult(result);
+      // Try to read the claim document immediately so the UI shows the QR
+      // panel without requiring a manual refresh while the realtime
+      // subscription catches up.
+      try {
+        const docData = await readClaimOnce({ claimId: result.claimId });
+        if (docData) {
+          setClaimRecord(normalizeClaimRecord(result.claimId, docData));
+        }
+      } catch (e) {
+        console.warn('assignDiscordNumber: readClaimOnce failed', e?.message || e);
+      }
       setClaimError("");
       setIsStaffSelfClaimMode(false);
     } catch (error) {
@@ -1400,6 +1469,14 @@ function App() {
       console.debug("handleStaffManualClaim: claimEventNumber result", result);
 
       setClaimResult(result);
+      try {
+        const docData = await readClaimOnce({ claimId: result.claimId });
+        if (docData) {
+          setClaimRecord(normalizeClaimRecord(result.claimId, docData));
+        }
+      } catch (e) {
+        console.warn('handleStaffManualClaim: readClaimOnce failed', e?.message || e);
+      }
       setClaimError("");
       setControlMessage("Assigned number.");
     } catch (e) {
@@ -1545,6 +1622,53 @@ function App() {
       },
     });
   }, [shouldSubscribeToRosterData]);
+
+  const fetchPreclaims = useCallback(async () => {
+    if (!firebaseEnabled || !hasTrustedStaffAccess || !liveEvent.eventId) return [];
+
+    try {
+      const results = await readAllPreclaims();
+      // results: array of { id, data }
+      const normalized = (results || [])
+        .map((entry) => ({
+          preclaimId: entry.id,
+          ...entry.data,
+        }))
+        .filter((p) => p.eventId === liveEvent.eventId)
+        .sort((a, b) => {
+          const aAt = a.createdAt?.toMillis ? a.createdAt.toMillis() : a.createdAt || 0;
+          const bAt = b.createdAt?.toMillis ? b.createdAt.toMillis() : b.createdAt || 0;
+          return aAt - bAt;
+        });
+
+      setClaimPreclaims(normalized);
+      return normalized;
+    } catch (e) {
+      console.error('fetchPreclaims failed', e?.message || e);
+      setClaimPreclaims([]);
+      return [];
+    }
+  }, [hasTrustedStaffAccess, liveEvent.eventId]);
+
+  const handleAssignPreclaimAsStaff = useCallback(async (preclaimId) => {
+    try {
+      await assignPreclaimAsStaff({ preclaimId });
+      // refresh lists
+      void fetchPreclaims();
+    } catch (e) {
+      console.error('assignPreclaimAsStaff failed', e?.message || e);
+      throw e;
+    }
+  }, [fetchPreclaims]);
+
+  const handleRemoveClaim = useCallback(async (claimId) => {
+    try {
+      await removeClaim({ claimId });
+    } catch (e) {
+      console.error('removeClaim failed', e?.message || e);
+      throw e;
+    }
+  }, []);
 
   useEffect(() => {
     if (mode === "control" && isEventLive && hasTrustedStaffAccess) {
@@ -2277,6 +2401,12 @@ function App() {
           scannerActive={scannerActive}
           scannerVideoRef={scannerVideoRef}
           totalPeopleWithNumbers={totalPeopleWithNumbers}
+          preclaims={claimPreclaims}
+          onFetchPreclaims={fetchPreclaims}
+          onAssignPreclaimAsStaff={handleAssignPreclaimAsStaff}
+          onRemoveClaim={handleRemoveClaim}
+          liveEvent={liveEvent}
+          showPreclaimQueue={isEventLive && !isClaimWindowOpen}
         />
       </Suspense>
     );
@@ -2366,6 +2496,7 @@ function App() {
       setScannerActive={setScannerActive}
       setScanFeedback={setScanFeedback}
       changeMode={changeMode}
+      claimPreclaim={claimPreclaim}
       />
     </>
   );

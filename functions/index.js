@@ -251,6 +251,108 @@ export const readPreclaimForUser = onCall(async (request) => {
   return { exists: true, data: preSnap.data() };
 });
 
+export const listPreclaims = onCall(async (request) => {
+  // Only staff may list all preclaims
+  if (!request.auth || request.auth.token.staff !== true) {
+    throw new HttpsError('permission-denied', 'Not authorized to list preclaims.');
+  }
+
+  const preclaimsCol = db.collection(`${LIVE_EVENT_PATH}/preclaims`);
+  const snapshot = await preclaimsCol.orderBy('createdAt').get();
+
+  const results = [];
+
+  snapshot.forEach((docSnap) => {
+    results.push({ id: docSnap.id, data: docSnap.data() });
+  });
+
+  return { preclaims: results };
+});
+
+export const assignPreclaimAsStaff = onCall(async (request) => {
+  // Staff may assign any preclaim immediately
+  if (!request.auth || request.auth.token.staff !== true) {
+    throw new HttpsError('permission-denied', 'Not authorized to assign preclaims as staff.');
+  }
+
+  const preclaimId = request.data?.preclaimId;
+  if (!preclaimId || typeof preclaimId !== 'string') {
+    throw new HttpsError('invalid-argument', 'preclaimId is required.');
+  }
+
+  const preclaimRef = db.doc(`${LIVE_EVENT_PATH}/preclaims/${preclaimId}`);
+  const preSnap = await preclaimRef.get();
+
+  if (!preSnap.exists) {
+    throw new HttpsError('not-found', 'Preclaim not found.');
+  }
+
+  const pre = preSnap.data() || {};
+
+  await db.runTransaction(async (tx) => {
+    const liveEventRef = db.doc(LIVE_EVENT_PATH);
+    const liveEventSnapshot = await tx.get(liveEventRef);
+    const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
+    let nextClaimNumber = liveEvent.nextClaimNumber ?? 1;
+
+    if (!liveEvent.eventId) {
+      throw new HttpsError('failed-precondition', 'Event is not active.');
+    }
+
+    const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${preclaimId}`);
+
+    tx.set(claimRef, {
+      avatarUrl: pre.avatarUrl || '',
+      claimedAt: Date.now(),
+      discordUserId: pre.discordUserId ?? null,
+      displayName: pre.displayName || '',
+      eventId: liveEvent.eventId || null,
+      isMember: pre.isMember ?? false,
+      itemClaimedAtMsHistory: [],
+      itemsClaimedCount: 0,
+      number: nextClaimNumber,
+      participantType: pre.participantType || '',
+      qrToken: crypto.randomUUID(),
+      redeemedRound: 0,
+      updatedAt: Date.now(),
+    });
+
+    tx.delete(preclaimRef);
+
+    nextClaimNumber += 1;
+
+    tx.update(liveEventRef, {
+      claimCount: nextClaimNumber - 1,
+      nextClaimNumber,
+      updatedAt: Date.now(),
+    });
+  });
+
+  return { assigned: true };
+});
+
+export const removeClaim = onCall(async (request) => {
+  if (!request.auth || request.auth.token.staff !== true) {
+    throw new HttpsError('permission-denied', 'Not authorized to remove claims.');
+  }
+
+  const claimId = request.data?.claimId;
+  if (!claimId || typeof claimId !== 'string') {
+    throw new HttpsError('invalid-argument', 'claimId is required.');
+  }
+
+  const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${claimId}`);
+  const claimSnap = await claimRef.get();
+
+  if (!claimSnap.exists) {
+    throw new HttpsError('not-found', 'Claim not found.');
+  }
+
+  await claimRef.delete();
+
+  return { removed: true };
+});
+
 export const syncDisplayFeedForClaimChanges = onDocumentWritten(
   `${LIVE_EVENT_PATH}/claims/{claimId}`,
   async (event) => {
