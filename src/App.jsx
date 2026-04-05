@@ -641,14 +641,13 @@ function App() {
   const memberCheckInLeadMinutes = normalizeMemberCheckInLeadMinutes(
     liveState.memberCheckInLeadMinutes,
   );
-  const { eventEndTime, eventStartTime, memberEarlyAccessTime } = getEventSchedule({
+  const { eventStartTime, memberEarlyAccessTime } = getEventSchedule({
     memberCheckInLeadMinutes,
     now: currentTime,
     startedAt: liveEvent.startedAt,
     timeframeEnd: liveEvent.timeframeEnd,
     timeframeStart: liveEvent.timeframeStart,
   });
-  const hasEventTimeEnded = Boolean(eventEndTime) && currentTime >= eventEndTime.getTime();
   const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
   const isClaimWindowOpen =
     !eventStartTime ||
@@ -1295,7 +1294,7 @@ function App() {
         }
       } catch (e) {
         // Non-fatal: continue without blocking the UI
-        // eslint-disable-next-line no-console
+         
         console.warn("enqueuePreclaim failed:", e?.message || e);
       }
     })();
@@ -1304,6 +1303,7 @@ function App() {
     liveEvent.eventId,
     loggedIn,
     user,
+    memberEarlyAccessTime,
     isClaimWindowOpen,
     attendeeClaimId,
     avatarUrl,
@@ -1341,21 +1341,21 @@ function App() {
       };
 
       // Debug: log intent and params
-      // eslint-disable-next-line no-console
+       
       console.debug("assignDiscordNumber: calling claimEventNumber", params);
 
       
 
       const result = await claimEventNumber(params);
 
-      // eslint-disable-next-line no-console
+       
       console.debug("assignDiscordNumber: success", result);
 
       setClaimResult(result);
       setClaimError("");
       setIsStaffSelfClaimMode(false);
     } catch (error) {
-      // eslint-disable-next-line no-console
+       
       console.error("assignDiscordNumber: failed", error && (error.message || error));
       setClaimError(error.message || "Unable to assign a number right now.");
     } finally {
@@ -1391,26 +1391,26 @@ function App() {
         participantType: "discord",
       };
 
-      // eslint-disable-next-line no-console
+       
       console.debug("handleStaffManualClaim: calling claimEventNumber", params);
 
       const result = await claimEventNumber(params);
 
-      // eslint-disable-next-line no-console
+       
       console.debug("handleStaffManualClaim: claimEventNumber result", result);
 
       setClaimResult(result);
       setClaimError("");
       setControlMessage("Assigned number.");
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.error("handleStaffManualClaim: assign failed", e && (e.message || e));
       setControlMessage(e?.message || "Unable to assign number.");
     } finally {
       setClaimLoading(false);
       setIsStaffSelfClaimMode(false);
     }
-  }, [liveEvent.eventId, loggedIn, user, isMember, memberEarlyAccessTime, avatarUrl, username]);
+  }, [liveEvent.eventId, loggedIn, user, isMember, avatarUrl, username]);
 
   const refreshMembershipAndUpdatePreclaim = useCallback(async () => {
     if (!loggedIn || !user || !liveEvent.eventId) {
@@ -1428,7 +1428,7 @@ function App() {
       } catch (e) {
         // If the stored token is invalid or expired, do NOT auto-redirect.
         // Instead, surface a re-auth prompt so the user can re-login explicitly.
-        // eslint-disable-next-line no-console
+         
         console.warn("refresh membership sign-in failed:", e?.message || e);
         setMembershipRefreshPrompt(true);
         return;
@@ -1454,7 +1454,7 @@ function App() {
         void assignDiscordNumber();
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.error("Unable to update preclaim membership:", e?.message || e);
     }
   }, [
@@ -1462,7 +1462,6 @@ function App() {
     user,
     liveEvent.eventId,
     memberEarlyAccessTime,
-    startOAuthGrant,
     username,
     avatarUrl,
     isClaimWindowOpen,
@@ -1723,7 +1722,7 @@ function App() {
 
       try {
         // Ask the server to process this user's preclaim if it exists.
-        // eslint-disable-next-line no-console
+         
         console.debug("tryAssignFromPreclaim: calling assignPreclaimIfQueued", { eventId: liveEvent.eventId, claimKey });
 
         const resp = await assignPreclaimIfQueued({
@@ -1731,20 +1730,20 @@ function App() {
           claimKey,
         });
 
-        // eslint-disable-next-line no-console
+         
         console.debug("tryAssignFromPreclaim: response", resp);
 
         if (cancelled) return;
 
         if (resp?.assigned) {
           // Server created the claim; fetch/refresh client-side claim state.
-          // eslint-disable-next-line no-console
+           
           console.debug("tryAssignFromPreclaim: assigned true, calling assignDiscordNumber");
           await assignDiscordNumber();
         }
       } catch (e) {
         // If callable throws due to permission/other issues, log and continue.
-        // eslint-disable-next-line no-console
+         
         console.warn("preclaim-check failed:", e?.message || e);
       }
     };

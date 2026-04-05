@@ -41,7 +41,7 @@ try {
   // Only run in browser environments where `console` is available.
   // Log which Vite vars are present (avoid printing secret values).
   // This helps diagnose "Connecting to live event…" hangs caused by missing env or blocked network.
-  // eslint-disable-next-line no-console
+   
   console.debug("Firebase config present?", {
     apiKey: Boolean(firebaseConfig.apiKey),
     authDomain: Boolean(firebaseConfig.authDomain),
@@ -171,7 +171,7 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
   // Wrap handlers with debug logs to make subscription state visible in browser console.
   const wrappedOnEvent = (snapshot) => {
     try {
-      // eslint-disable-next-line no-console
+       
       console.debug("subscribeToLiveEvent: snapshot received", { exists: snapshot.exists });
     } catch {
       // ignore
@@ -186,7 +186,7 @@ export const subscribeToLiveEvent = ({ onEvent, onError }) => {
   };
 
   const wrappedOnError = (err) => {
-    // eslint-disable-next-line no-console
+     
     console.error("subscribeToLiveEvent: error", err && (err.message || err));
     if (typeof onError === "function") onError(err);
   };
@@ -485,24 +485,24 @@ export const enqueuePreclaim = async ({
   const claimId = buildClaimId(eventId, claimKey);
   const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
   try {
-    // eslint-disable-next-line no-console
+     
     console.debug("enqueuePreclaim: writing preclaim", { claimId, eventId, claimKey });
 
     // Log current auth user id and custom claims (if available) to help debug rules
     try {
       if (auth && auth.currentUser) {
-        // eslint-disable-next-line no-console
+         
         console.debug("enqueuePreclaim: auth.currentUser.uid", auth.currentUser.uid);
         try {
           const idTokenResult = await auth.currentUser.getIdTokenResult();
-          // eslint-disable-next-line no-console
+           
           console.debug("enqueuePreclaim: idTokenResult.claims", idTokenResult.claims);
         } catch (tokenErr) {
-          // eslint-disable-next-line no-console
+           
           console.debug("enqueuePreclaim: failed to getIdTokenResult", tokenErr && (tokenErr.message || tokenErr));
         }
       } else {
-        // eslint-disable-next-line no-console
+         
         console.debug("enqueuePreclaim: no auth.currentUser available");
       }
     } catch {
@@ -526,17 +526,17 @@ export const enqueuePreclaim = async ({
         updatedAt: serverTimestamp(),
       };
 
-      // eslint-disable-next-line no-console
+       
       console.debug("enqueuePreclaim: final payload", docPayload);
 
       await setDoc(preclaimRef, docPayload, { merge: true });
 
-    // eslint-disable-next-line no-console
+     
     console.debug("enqueuePreclaim: write successful", { claimId });
 
     return { claimId };
   } catch (e) {
-    // eslint-disable-next-line no-console
+     
     console.error("enqueuePreclaim failed (client):", e && (e.code || e.message || e), e);
     throw e;
   }
@@ -582,7 +582,7 @@ export const updatePreclaimMembership = async ({
     updatePayload.participantType = "discord";
   }
 
-  // eslint-disable-next-line no-console
+   
   console.debug("updatePreclaimMembership: updating preclaim", { claimId, updatePayload, finalDiscordUserId });
 
   await setDoc(preclaimRef, updatePayload, { merge: true });
