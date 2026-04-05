@@ -25,7 +25,7 @@ export default function OnScreenLogger() {
 
     // Wrap console methods once
     if (!globalThis.__onscreen_logger_installed) {
-      const levels = ["log", "info", "warn", "error"];
+      const levels = ["log", "info", "warn", "error", "debug"];
       levels.forEach((level) => {
         const orig = console[level].bind(console);
         console[level] = (...args) => {
