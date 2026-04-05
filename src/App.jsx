@@ -36,6 +36,7 @@ import {
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
+import { auth } from "./firebase";
 import OnScreenLogger from "./components/OnScreenLogger";
 
 const ControlPage = lazy(() => import("./components/ControlPage"));
@@ -1343,6 +1344,27 @@ function App() {
       // Debug: log intent and params
       // eslint-disable-next-line no-console
       console.debug("assignDiscordNumber: calling claimEventNumber", params);
+
+      // Log current auth user and token claims to help debug rules failures
+      try {
+        if (auth && auth.currentUser) {
+          // eslint-disable-next-line no-console
+          console.debug("assignDiscordNumber: auth.currentUser.uid", auth.currentUser.uid);
+          try {
+            const idTokenResult = await auth.currentUser.getIdTokenResult();
+            // eslint-disable-next-line no-console
+            console.debug("assignDiscordNumber: idTokenResult.claims", idTokenResult.claims);
+          } catch {
+            // eslint-disable-next-line no-console
+            console.debug("assignDiscordNumber: failed to getIdTokenResult");
+          }
+        } else {
+          // eslint-disable-next-line no-console
+          console.debug("assignDiscordNumber: no auth.currentUser available");
+        }
+      } catch {
+        // swallow
+      }
 
       const result = await claimEventNumber(params);
 

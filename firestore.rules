@@ -110,6 +110,39 @@ service cloud.firestore {
         && validLiveState(data.state);
     }
 
+    function liveStateIncrementAllowed(requestData, resourceData) {
+      return isSignedIn()
+        // Only allow a very specific incremental update: nextClaimNumber increases by 1
+        // and claimCount becomes the previous nextClaimNumber value. All other fields
+        // must remain unchanged.
+        && requestData.keys().hasOnly([
+          'active',
+          'claimCount',
+          'claimAccessSecret',
+          'endedAt',
+          'eventId',
+          'nextClaimNumber',
+          'startedAt',
+          'state',
+          'timeframeEnd',
+          'timeframeLabel',
+          'timeframeStart',
+          'updatedAt'
+        ])
+        && requestData.active == resourceData.active
+        && requestData.claimAccessSecret == resourceData.claimAccessSecret
+        && (requestData.endedAt == resourceData.endedAt)
+        && requestData.eventId == resourceData.eventId
+        && requestData.startedAt == resourceData.startedAt
+        && requestData.state == resourceData.state
+        && requestData.timeframeEnd == resourceData.timeframeEnd
+        && requestData.timeframeLabel == resourceData.timeframeLabel
+        && requestData.timeframeStart == resourceData.timeframeStart
+        && requestData.nextClaimNumber == resourceData.nextClaimNumber + 1
+        && requestData.claimCount == resourceData.nextClaimNumber
+        && (requestData.updatedAt is timestamp || requestData.updatedAt is int);
+    }
+
     function validClaimDocument(data) {
       return data.keys().hasOnly([
           'avatarUrl',
@@ -206,8 +239,10 @@ service cloud.firestore {
       allow get: if isLiveEventDoc(eventId);
       allow list: if false;
       allow create, update: if isLiveEventDoc(eventId)
-        && isStaff()
-        && validLiveEventDocument(request.resource.data);
+        && (
+          (isStaff() && validLiveEventDocument(request.resource.data))
+          || liveStateIncrementAllowed(request.resource.data, resource.data)
+        );
       allow delete: if false;
 
       match /public/{docId} {
@@ -216,8 +251,10 @@ service cloud.firestore {
       }
 
       match /claims/{claimId} {
-        allow get: if isLiveEventDoc(eventId)
-          && (isStaff() || isOwnClaim(resource.data));
+        // Allow authenticated users to read claim documents so client
+        // transactions can check existence before creating. Staff still
+        // retain full access.
+        allow get: if isLiveEventDoc(eventId) && (isStaff() || isSignedIn());
         allow list: if isLiveEventDoc(eventId) && isStaff();
         allow create: if isLiveEventDoc(eventId)
           && isOwnClaim(request.resource.data)
