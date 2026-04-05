@@ -1,4 +1,14 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "preclaims",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isMember", "order": "ASCENDING" },
+        { "fieldPath": "memberEligibleAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
