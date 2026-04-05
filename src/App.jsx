@@ -1276,6 +1276,7 @@ function App() {
           loggedIn &&
           claimAccessGranted &&
           liveEvent.eventId &&
+          hasTrustedAttendeeAccess &&
           !isClaimWindowOpen &&
           user &&
           !attendeeClaimId
@@ -1307,6 +1308,7 @@ function App() {
     avatarUrl,
     username,
     isMember,
+    hasTrustedAttendeeAccess,
   ]);
 
   
