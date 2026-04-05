@@ -36,6 +36,7 @@ import {
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
+import OnScreenLogger from "./components/OnScreenLogger";
 
 const ControlPage = lazy(() => import("./components/ControlPage"));
 const DisplayPage = lazy(() => import("./components/DisplayPage"));
@@ -2311,7 +2312,8 @@ function App() {
   }
 
   return (
-    <ClaimPage
+    <>
+      <ClaimPage
       allowManualClaim={hasManualStaffClaimAccess && !claimAccessGranted}
       authError={authError}
       areClaimNotificationsEnabled={areClaimNotificationsEnabled}
@@ -2356,7 +2358,9 @@ function App() {
       setScannerActive={setScannerActive}
       setScanFeedback={setScanFeedback}
       changeMode={changeMode}
-    />
+      />
+      <OnScreenLogger />
+    </>
   );
 }
 
