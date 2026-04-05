@@ -649,7 +649,6 @@ function App() {
     timeframeStart: liveEvent.timeframeStart,
   });
   const hasEventTimeEnded = Boolean(eventEndTime) && currentTime >= eventEndTime.getTime();
-  const isAttendeeEventLive = isEventLive && !hasEventTimeEnded;
   const isEventStarted = !eventStartTime || currentTime >= eventStartTime.getTime();
   const isClaimWindowOpen =
     !eventStartTime ||
