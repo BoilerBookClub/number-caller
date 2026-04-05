@@ -1,5 +1,6 @@
 import QRCode from "react-qr-code";
 import bbcLogo from "../assets/bbc_logo.png";
+import Spinner from "./Spinner";
 import displayIcon from "../assets/display.svg";
 import infoIcon from "../assets/info.svg";
 import notificationIcon from "../assets/notification.svg";
@@ -127,7 +128,9 @@ function ClaimResultCard({
             </p>
           )
         ) : (
-          <p>Syncing your claim status...</p>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+            <Spinner size={48} />
+          </div>
         )}
       </div>
     </div>
@@ -170,7 +173,11 @@ function MemberClaimCard({
       ) : null}
       {loggedIn && isCheckingAccess ? <p>Checking your membership...</p> : null}
       {loggedIn && !isCheckingAccess && authError ? <p className="entry-message">{authError}</p> : null}
-      {loggedIn && claimLoading ? <p>Assigning your number...</p> : null}
+      {loggedIn && claimLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.5rem' }}>
+          <Spinner size={56} />
+        </div>
+      ) : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && !isClaimWindowOpen ? (
         <>
           <h2>Logged in</h2>

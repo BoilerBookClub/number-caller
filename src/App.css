@@ -198,6 +198,17 @@ body.modal-scroll-locked {
   margin: 0 auto;
 }
 
+/* Place claim modal near the top of the page with same horizontal margin */
+.claim-modal-card {
+  margin-top: 2rem;
+}
+
+@media (max-width: 700px) {
+  .claim-modal-card {
+    margin-top: 0.75rem;
+  }
+}
+
 .claim-corner-button {
   position: absolute;
   top: 1rem;
@@ -605,6 +616,37 @@ body.modal-scroll-locked {
 
 .queue-card {
   position: relative;
+}
+
+/* Spinner with centered logo */
+.spinner-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 6px solid rgba(0,0,0,0.08);
+  border-top-color: rgba(0,0,0,0.9);
+  animation: spin 900ms linear infinite;
+}
+.spinner-logo {
+  position: relative;
+  width: 56%;
+  height: 56%;
+  object-fit: contain;
+  z-index: 1;
+  border-radius: 50%;
+  background: transparent;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .queue-corner-actions {
@@ -2222,7 +2264,6 @@ li {
   display: flex;
   gap: 1.5rem;
   flex: 0 0 auto;
-  justify-content: center;
   align-items: center;
   margin-top: 0;
   padding: 0.9rem 1rem;
@@ -2232,6 +2273,7 @@ li {
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(14px);
   box-shadow: #34343441 0 0 10px 1px;
+  width: fit-content;
 }
 
 .rules-qr-container ol {
@@ -2303,13 +2345,13 @@ li {
   height: 0.65rem;
   overflow: hidden;
   border-radius: 999px;
-  background: #ece7dc;
+  background: #f1e9de; /* warmer, on-theme background */
 }
 
 .qr-refresh-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ffbe5c 0%, #ff7f50 100%);
+  background: linear-gradient(90deg, #ffbe5c 0%, #c89c6d 60%, #bd915f 100%); /* on-theme gold → orange gradient */
   transition: width 0.9s linear;
 }
 

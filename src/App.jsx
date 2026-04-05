@@ -36,8 +36,7 @@ import {
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
-import { auth } from "./firebase";
-import OnScreenLogger from "./components/OnScreenLogger";
+import Spinner from "./components/Spinner";
 
 const ControlPage = lazy(() => import("./components/ControlPage"));
 const DisplayPage = lazy(() => import("./components/DisplayPage"));
@@ -1177,20 +1176,21 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (isAttendeeEventLive) {
+    // Track whether the event has been actively ended by staff (isEventLive)
+    if (isEventLive) {
       previousLiveEventTitleRef.current = liveState.title?.trim() || initialState.title;
     }
 
     const wasEventLive = previousIsEventLiveRef.current;
 
-    if (isAttendeeEventLive) {
+    if (isEventLive) {
       setEndedEventTitle("");
     } else if (wasEventLive) {
       setEndedEventTitle(previousLiveEventTitleRef.current);
     }
 
-    previousIsEventLiveRef.current = isAttendeeEventLive;
-  }, [isAttendeeEventLive, liveState.title]);
+    previousIsEventLiveRef.current = isEventLive;
+  }, [isEventLive, liveState.title]);
 
   useEffect(() => {
     if (!attendeeClaimId || !hasTrustedAttendeeAccess) {
@@ -1345,26 +1345,7 @@ function App() {
       // eslint-disable-next-line no-console
       console.debug("assignDiscordNumber: calling claimEventNumber", params);
 
-      // Log current auth user and token claims to help debug rules failures
-      try {
-        if (auth && auth.currentUser) {
-          // eslint-disable-next-line no-console
-          console.debug("assignDiscordNumber: auth.currentUser.uid", auth.currentUser.uid);
-          try {
-            const idTokenResult = await auth.currentUser.getIdTokenResult();
-            // eslint-disable-next-line no-console
-            console.debug("assignDiscordNumber: idTokenResult.claims", idTokenResult.claims);
-          } catch {
-            // eslint-disable-next-line no-console
-            console.debug("assignDiscordNumber: failed to getIdTokenResult");
-          }
-        } else {
-          // eslint-disable-next-line no-console
-          console.debug("assignDiscordNumber: no auth.currentUser available");
-        }
-      } catch {
-        // swallow
-      }
+      
 
       const result = await claimEventNumber(params);
 
@@ -1490,7 +1471,8 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!isAttendeeEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
+    // Claim access is allowed while staff mark the event live; ignore the schedule end time here
+    if (!isEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
       setClaimAccessGranted(false);
       setClaimAccessStatus("");
       clearClaimAccessGrant();
@@ -1542,7 +1524,7 @@ function App() {
   }, [
     claimAccessCode,
     currentTime,
-    isAttendeeEventLive,
+    isEventLive,
     liveEvent.claimAccessSecret,
     liveEvent.eventId,
     loggedIn,
@@ -1703,7 +1685,7 @@ function App() {
 
   useEffect(() => {
     if (
-      !isAttendeeEventLive ||
+      !isEventLive ||
       !claimAccessGranted ||
       !loggedIn ||
       !hasTrustedAttendeeAccess ||
@@ -1722,7 +1704,7 @@ function App() {
     effectiveClaimResult,
     isClaimWindowOpen,
     isCheckingAccess,
-    isAttendeeEventLive,
+    isEventLive,
     loggedIn,
     hasTrustedAttendeeAccess,
   ]);
@@ -2188,7 +2170,9 @@ function App() {
   if (!isHydrated) {
     return (
       <div className="mode-select">
-        <h2>Connecting to live event…</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spinner size={96} />
+          </div>
       </div>
     );
   }
@@ -2298,7 +2282,7 @@ function App() {
 
   // If event is not live, and user is not up or has already claimed, show closed event page
   if (
-    !isAttendeeEventLive &&
+    !isEventLive &&
     (!effectiveClaimResult || hasClaimedCurrentRound || !showClaimQr) &&
     !hasManualStaffClaimAccess
   ) {
@@ -2381,7 +2365,6 @@ function App() {
       setScanFeedback={setScanFeedback}
       changeMode={changeMode}
       />
-      <OnScreenLogger />
     </>
   );
 }

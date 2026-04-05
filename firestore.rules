@@ -112,35 +112,38 @@ service cloud.firestore {
 
     function liveStateIncrementAllowed(requestData, resourceData) {
       return isSignedIn()
-        // Only allow a very specific incremental update: nextClaimNumber increases by 1
-        // and claimCount becomes the previous nextClaimNumber value. All other fields
-        // must remain unchanged.
-        && requestData.keys().hasOnly([
-          'active',
-          'claimCount',
-          'claimAccessSecret',
-          'endedAt',
-          'eventId',
-          'nextClaimNumber',
-          'startedAt',
-          'state',
-          'timeframeEnd',
-          'timeframeLabel',
-          'timeframeStart',
-          'updatedAt'
-        ])
-        && requestData.active == resourceData.active
-        && requestData.claimAccessSecret == resourceData.claimAccessSecret
-        && (requestData.endedAt == resourceData.endedAt)
-        && requestData.eventId == resourceData.eventId
-        && requestData.startedAt == resourceData.startedAt
-        && requestData.state == resourceData.state
-        && requestData.timeframeEnd == resourceData.timeframeEnd
-        && requestData.timeframeLabel == resourceData.timeframeLabel
-        && requestData.timeframeStart == resourceData.timeframeStart
+        // Allow a minimal incremental update where the client only modifies
+        // `nextClaimNumber` and `claimCount`. When other fields are included
+        // in the request they must match the existing document values.
         && requestData.nextClaimNumber == resourceData.nextClaimNumber + 1
         && requestData.claimCount == resourceData.nextClaimNumber
-        && (requestData.updatedAt is timestamp || requestData.updatedAt is int);
+        && (
+          !requestData.keys().hasAny(['active']) || requestData.active == resourceData.active
+        )
+        && (
+          !requestData.keys().hasAny(['claimAccessSecret']) || requestData.claimAccessSecret == resourceData.claimAccessSecret
+        )
+        && (
+          !requestData.keys().hasAny(['endedAt']) || requestData.endedAt == resourceData.endedAt
+        )
+        && (
+          !requestData.keys().hasAny(['eventId']) || requestData.eventId == resourceData.eventId
+        )
+        && (
+          !requestData.keys().hasAny(['startedAt']) || requestData.startedAt == resourceData.startedAt
+        )
+        && (
+          !requestData.keys().hasAny(['state']) || requestData.state == resourceData.state
+        )
+        && (
+          !requestData.keys().hasAny(['timeframeEnd']) || requestData.timeframeEnd == resourceData.timeframeEnd
+        )
+        && (
+          !requestData.keys().hasAny(['timeframeLabel']) || requestData.timeframeLabel == resourceData.timeframeLabel
+        )
+        && (
+          !requestData.keys().hasAny(['timeframeStart']) || requestData.timeframeStart == resourceData.timeframeStart
+        );
     }
 
     function validClaimDocument(data) {
