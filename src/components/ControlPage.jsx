@@ -697,7 +697,7 @@ function AttendeeGraphsPanel({
   );
 }
 
-function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPreclaims, onAssignPreclaimAsStaff, onRemoveClaim, liveEventId, showPreclaimQueue }) {
+function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPreclaims, onAssignPreclaimAsStaff, onRemoveClaim, showPreclaimQueue }) {
   const [expandedGraphTone, setExpandedGraphTone] = useState("");
   const [isGraphPanelMounted, setIsGraphPanelMounted] = useState(false);
   const [isNumberClaimsVisible, setIsNumberClaimsVisible] = useState(true);
@@ -1446,7 +1446,7 @@ function ControlPage({
               onFetchPreclaims={onFetchPreclaims}
               onAssignPreclaimAsStaff={onAssignPreclaimAsStaff}
               onRemoveClaim={onRemoveClaim}
-              liveEventId={liveEvent?.eventId}
+              showPreclaimQueue={showPreclaimQueue}
             />
           </div>
           {isEventDetailsModalOpen ? (
