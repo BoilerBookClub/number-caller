@@ -6,7 +6,7 @@ function formatMessage(level, args) {
   try {
     const text = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
     return `${new Date().toLocaleTimeString()} [${level}] ${text}`;
-  } catch (e) {
+  } catch {
     return `${new Date().toLocaleTimeString()} [${level}] (unserializable)`;
   }
 }
@@ -36,7 +36,7 @@ export default function OnScreenLogger() {
               globalThis.__onscreen_logger_messages.shift();
             }
             window.dispatchEvent(new CustomEvent("onscreen-log", { detail: msg }));
-          } catch (e) {
+          } catch {
             // ignore
           }
           orig(...args);
@@ -45,7 +45,7 @@ export default function OnScreenLogger() {
       globalThis.__onscreen_logger_installed = true;
     }
 
-    const handle = (e) => {
+    const handle = () => {
       // New message appended
       const list = globalThis.__onscreen_logger_messages || [];
       setMessages(list.slice(-100).reverse());
