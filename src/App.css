@@ -1122,6 +1122,8 @@ body.modal-scroll-locked {
   padding: 1rem;
   background: rgba(12, 16, 20, 0.42);
   backdrop-filter: blur(6px);
+  overscroll-behavior: none; /* prevent rubber-banding exposing transparent gap */
+  overflow: hidden;
 }
 
 .roster-graphs-panel {
@@ -1425,6 +1427,16 @@ body.modal-scroll-locked {
   background: #ffffff;
   border: 1px solid #d7d7d7;
   box-shadow: #1f1f1f33 0 20px 48px;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* pin modal to viewport to avoid backdrop gap during over-scroll */
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 1rem;
+  z-index: 990;
 
   .graph-expand-backdrop {
     padding: 1rem;
@@ -1469,11 +1481,23 @@ body.modal-scroll-locked {
 
 .event-modal-form {
   width: 100%;
-  max-width: 32rem;
+  max-width: 28rem;
 }
 
 .event-modal-form .control-input-group {
   margin-bottom: 1.15rem;
+}
+
+.event-modal-form .title-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.85rem;
+  align-items: end;
+  margin-bottom: 0.85rem;
+}
+
+.event-modal-form .title-font-select select {
+  width: 11rem;
 }
 
 .event-modal-form .control-input-group input,
@@ -1484,7 +1508,7 @@ body.modal-scroll-locked {
 
 .event-modal-form .control-input-group--centered input,
 .event-modal-form .control-input-group--centered select {
-  width: min(100%, 32rem);
+  width: min(100%, 28rem);
 }
 
 .event-modal-form .time-grid--centered {
@@ -2362,6 +2386,19 @@ li {
 
   .event-modal {
     width: min(100%, 36rem);
+    max-height: calc(100vh - 1.5rem);
+    border-radius: 16px;
+  }
+
+  /* On small screens, pin the modal to the top so overscroll doesn't reveal backdrop */
+  .event-modal-backdrop {
+    align-items: flex-start;
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .event-modal {
+    margin: 0 auto;
   }
 
   .event-modal-content {

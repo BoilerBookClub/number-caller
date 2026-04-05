@@ -178,26 +178,28 @@ function EventDetailsModal({
         <div className="event-modal-content">
           <h2>{isEventLive ? "Edit Event Details" : "Create Event"}</h2>
           <form className="control-form event-modal-form" onSubmit={onSubmit}>
-            <label className="control-input-group control-input-group--centered">
-              <span>Event Title</span>
-              <input
-                type="text"
-                value={controlForm.title}
-                onChange={onFieldChange("title")}
-                placeholder="Event Name Here..."
-                autoComplete="off"
-              />
-            </label>
-            <label className="control-input-group control-input-group--centered">
-              <span>Event Title Font</span>
-              <select value={controlForm.titleFont} onChange={onFieldChange("titleFont")}>
-                {TITLE_FONT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="title-grid">
+              <label className="control-input-group control-input-group--centered">
+                <span>Event Title</span>
+                <input
+                  type="text"
+                  value={controlForm.title}
+                  onChange={onFieldChange("title")}
+                  placeholder="Event Name Here..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className="control-input-group control-input-group--centered control-input-group--compact title-font-select">
+                <span>Event Title Font</span>
+                <select value={controlForm.titleFont} onChange={onFieldChange("titleFont")}>
+                  {TITLE_FONT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <label className="control-input-group control-input-group--centered">
               <span>Book List URL</span>
               <input

@@ -2177,7 +2177,7 @@ function App() {
 
   if (mode === "display") {
     return (
-      <Suspense fallback={<div className="mode-select"><h2>Loading display...</h2></div>}>
+      <Suspense fallback={<div className="mode-select"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner size={96} /></div></div>}>
         <DisplayPage
           displayFeedItems={displayFeedItems}
           nextQrCountdownSeconds={nextQrCountdownSeconds}
@@ -2203,7 +2203,9 @@ function App() {
     if (isCheckingAccess) {
       return (
         <div className="mode-select">
-          <h2>Checking Discord access...</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spinner size={56} />
+          </div>
         </div>
       );
     }
@@ -2211,13 +2213,15 @@ function App() {
     if (!hasTrustedStaffAccess) {
       return (
         <div className="mode-select">
-          <h2>Returning to main page...</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spinner size={56} />
+          </div>
         </div>
       );
     }
 
     return (
-      <Suspense fallback={<div className="mode-select"><h2>Loading control panel...</h2></div>}>
+      <Suspense fallback={<div className="mode-select"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner size={96} /></div></div>}>
         <ControlPage
           activeQueueClaims={activeQueueClaims}
           activeQueueElapsedLabel={activeQueueElapsedLabel}
