@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import autoIcon from "../assets/skip.svg";
-import displayIcon from "../assets/display.svg";
-import editIcon from "../assets/edit.svg";
-import expandIcon from "../assets/expand.svg";
-import graphIcon from "../assets/graph.svg";
-import groupIcon from "../assets/group.svg";
-import scanIcon from "../assets/scan.svg";
-import settingsIcon from "../assets/settings.svg";
+import {
+  ChartColumnIncreasing,
+  Expand,
+  FastForward,
+  Monitor,
+  ScanLine,
+  Settings,
+  SquarePen,
+  Users,
+} from "lucide-react";
 import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
 
 const AUTO_SETTINGS_ANIMATION_MS = 180;
@@ -583,7 +585,10 @@ function TimelineChart({
                 aria-label={`Expand ${title.toLowerCase()}`}
                 title={`Expand ${title.toLowerCase()}`}
               >
-                <img src={expandIcon} alt="" className="timeline-chart-expand-icon" />
+                <Expand
+                  aria-hidden="true"
+                  className="timeline-chart-expand-icon icon-animated icon-animate-pulse"
+                />
               </button>
               {showCloseButton ? (
                 <button
@@ -801,6 +806,7 @@ function FullRoster({
   onToggleGraph,
   preclaims,
   onAssignPreclaimAsStaff,
+  onMoveClaimBackToQueueAsStaff,
   onRefreshAllPreclaimMembershipsAsStaff,
   onRefreshPreclaimMembershipAsStaff,
   onRemoveClaim,
@@ -991,10 +997,9 @@ function FullRoster({
               aria-label={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
               title={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
             >
-              <img
-                src={graphIcon}
-                alt=""
-                className="button-icon queue-corner-button-icon queue-corner-button-icon--graph"
+              <ChartColumnIncreasing
+                aria-hidden="true"
+                className="button-icon queue-corner-button-icon queue-corner-button-icon--graph icon-animated icon-animate-rise"
               />
             </button>
           </div>
@@ -1041,6 +1046,24 @@ function FullRoster({
                   >
                     {claim.isMember ? "Member" : "Not Member"}
                   </span>
+                  {showPreclaimQueue ? (
+                    <button
+                      type="button"
+                      className="secondary-button roster-inline-action"
+                      onClick={() => {
+                        if (!onMoveClaimBackToQueueAsStaff) return;
+                        const confirmMsg = `Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue?`;
+                        if (window.confirm(confirmMsg)) {
+                          void onMoveClaimBackToQueueAsStaff(claim.claimId);
+                        }
+                      }}
+                      disabled={!onMoveClaimBackToQueueAsStaff}
+                      title="Move back to queue"
+                      aria-label={`Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue`}
+                    >
+                      Queue
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="roster-remove-button"
@@ -1264,6 +1287,7 @@ function ControlPage({
   onOpenScanner,
   preclaims,
   onAssignPreclaimAsStaff,
+  onMoveClaimBackToQueueAsStaff,
   onRefreshAllPreclaimMembershipsAsStaff,
   onRefreshPreclaimMembershipAsStaff,
   onRemovePreclaimAsStaff,
@@ -1436,7 +1460,7 @@ function ControlPage({
                   aria-label="Edit event details"
                   title="Edit event details"
                 >
-                  <img src={editIcon} alt="" className="button-icon" />
+                  <SquarePen aria-hidden="true" className="button-icon icon-animated icon-animate-wiggle" />
                 </button>
                 <button
                   className="danger-button control-side-action control-side-action--text"
@@ -1495,7 +1519,10 @@ function ControlPage({
                     aria-label="Auto-advance settings"
                     title="Auto-advance settings"
                   >
-                    <img src={settingsIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--settings" />
+                    <Settings
+                      aria-hidden="true"
+                      className="button-icon queue-corner-button-icon queue-corner-button-icon--settings icon-animated icon-animate-spin-slow"
+                    />
                   </button>
                   <button
                     className={`secondary-button queue-corner-button${autoAdvanceEnabled ? " queue-corner-button--active" : ""}`}
@@ -1504,11 +1531,16 @@ function ControlPage({
                     aria-label={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
                     title={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
                   >
-                    <img src={autoIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--auto" />
+                    <FastForward
+                      aria-hidden="true"
+                      className="button-icon queue-corner-button-icon queue-corner-button-icon--auto icon-animated icon-animate-shift"
+                    />
                   </button>
                 </div>
                 <h2 className="queue-title">
-                  {!liveState.finalCall ? <img src={groupIcon} alt="" className="title-icon" /> : null}
+                  {!liveState.finalCall ? (
+                    <Users aria-hidden="true" className="title-icon icon-animated icon-animate-float" />
+                  ) : null}
                   <span>{queueTitle}</span>
                 </h2>
                 {!isAutoAdvanceSettingsMounted && activeQueueElapsedLabel ? (
@@ -1696,6 +1728,7 @@ function ControlPage({
               onToggleGraph={() => setIsAttendeeGraphOpen((currentValue) => !currentValue)}
               preclaims={preclaims}
               onAssignPreclaimAsStaff={onAssignPreclaimAsStaff}
+              onMoveClaimBackToQueueAsStaff={onMoveClaimBackToQueueAsStaff}
               onRefreshAllPreclaimMembershipsAsStaff={onRefreshAllPreclaimMembershipsAsStaff}
               onRefreshPreclaimMembershipAsStaff={onRefreshPreclaimMembershipAsStaff}
               onRemovePreclaimAsStaff={onRemovePreclaimAsStaff}
@@ -1734,11 +1767,11 @@ function ControlPage({
             onClick={onOpenScanner}
             disabled={scanLoading || !isEventLive}
           >
-            <img src={scanIcon} alt="" className="button-icon" />
+            <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
             <span>Open Scanner</span>
           </button>
           <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
-            <img src={displayIcon} alt="" className="button-icon" />
+            <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
             <span>Open Display</span>
           </button>
         </div>

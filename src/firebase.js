@@ -88,6 +88,9 @@ const refreshAllPreclaimMembershipsAsStaffCallable = firebaseEnabled
   ? httpsCallable(functions, "refreshAllPreclaimMembershipsAsStaff")
   : null;
 const removeClaimCallable = firebaseEnabled ? httpsCallable(functions, "removeClaim") : null;
+const moveClaimBackToQueueAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "moveClaimBackToQueueAsStaff")
+  : null;
 const readPreclaimForUserCallable = firebaseEnabled
   ? httpsCallable(functions, "readPreclaimForUser")
   : null;
@@ -190,6 +193,16 @@ export const removeClaim = async ({ claimId }) => {
   }
 
   const result = await removeClaimCallable({ claimId });
+
+  return result.data;
+};
+
+export const moveClaimBackToQueueAsStaff = async ({ claimId }) => {
+  if (!firebaseEnabled || !moveClaimBackToQueueAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await moveClaimBackToQueueAsStaffCallable({ claimId });
 
   return result.data;
 };

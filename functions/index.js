@@ -337,11 +337,17 @@ const toPositiveInteger = (value) => {
   return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
 };
 
-const buildUsedClaimNumberSet = (claimsSnapshot) => {
+const buildUsedClaimNumberSet = (claimsSnapshot, eventId) => {
   const usedNumbers = new Set();
 
   claimsSnapshot.forEach((claimDoc) => {
-    const claimNumber = toPositiveInteger(claimDoc.data()?.number);
+    const claimData = claimDoc.data() || {};
+
+    if (eventId && claimData.eventId && claimData.eventId !== eventId) {
+      return;
+    }
+
+    const claimNumber = toPositiveInteger(claimData.number);
     if (claimNumber) {
       usedNumbers.add(claimNumber);
     }
@@ -517,7 +523,7 @@ export const assignPreclaimIfQueued = onCall(async (request) => {
     const claimsSnapshot = await tx.get(db.collection(`${LIVE_EVENT_PATH}/claims`));
     const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
     const currentNextClaimNumber = liveEvent.nextClaimNumber ?? 1;
-    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot);
+    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot, liveEvent.eventId);
     const assignedNumber = getFirstAvailableClaimNumber(usedNumbers);
 
     // If live event doesn't match requested event, abort
@@ -625,7 +631,7 @@ export const assignPreclaimAsStaff = onCall(async (request) => {
     const claimsSnapshot = await tx.get(db.collection(`${LIVE_EVENT_PATH}/claims`));
     const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
     const currentNextClaimNumber = liveEvent.nextClaimNumber ?? 1;
-    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot);
+    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot, liveEvent.eventId);
     const assignedNumber = getFirstAvailableClaimNumber(usedNumbers);
 
     if (!liveEvent.eventId) {
@@ -810,15 +816,95 @@ export const removeClaim = onCall(async (request) => {
   }
 
   const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${claimId}`);
-  const claimSnap = await claimRef.get();
+  const preclaimRef = db.doc(`${LIVE_EVENT_PATH}/preclaims/${claimId}`);
+  const liveEventRef = db.doc(LIVE_EVENT_PATH);
 
-  if (!claimSnap.exists) {
-    throw new HttpsError('not-found', 'Claim not found.');
-  }
+  await db.runTransaction(async (tx) => {
+    const [claimSnap, liveEventSnapshot] = await Promise.all([
+      tx.get(claimRef),
+      tx.get(liveEventRef),
+    ]);
 
-  await claimRef.delete();
+    if (!claimSnap.exists) {
+      throw new HttpsError('not-found', 'Claim not found.');
+    }
+
+    const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
+    const currentClaimCount = Number.isFinite(liveEvent?.claimCount) ? liveEvent.claimCount : 0;
+
+    tx.delete(claimRef);
+    tx.delete(preclaimRef);
+    tx.set(liveEventRef, {
+      claimCount: Math.max(0, currentClaimCount - 1),
+      updatedAt: Date.now(),
+    }, { merge: true });
+  });
 
   return { removed: true };
+});
+
+export const moveClaimBackToQueueAsStaff = onCall(async (request) => {
+  if (!request.auth || request.auth.token.staff !== true) {
+    throw new HttpsError("permission-denied", "Not authorized to move claims back to queue.");
+  }
+
+  const claimId = request.data?.claimId;
+  if (!claimId || typeof claimId !== "string") {
+    throw new HttpsError("invalid-argument", "claimId is required.");
+  }
+
+  const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${claimId}`);
+  const preclaimRef = db.doc(`${LIVE_EVENT_PATH}/preclaims/${claimId}`);
+  const liveEventRef = db.doc(LIVE_EVENT_PATH);
+
+  await db.runTransaction(async (tx) => {
+    const [claimSnapshot, liveEventSnapshot] = await Promise.all([
+      tx.get(claimRef),
+      tx.get(liveEventRef),
+    ]);
+
+    if (!claimSnapshot.exists) {
+      throw new HttpsError("not-found", "Claim not found.");
+    }
+
+    const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : null;
+    if (!liveEvent?.active || isLiveEventStarted(liveEvent)) {
+      throw new HttpsError("failed-precondition", "Queue is not currently open.");
+    }
+
+    const claimData = claimSnapshot.data() || {};
+    const activeEventId = liveEvent.eventId || null;
+    if (!activeEventId) {
+      throw new HttpsError("failed-precondition", "Event is not active.");
+    }
+
+    if (claimData.eventId && claimData.eventId !== activeEventId) {
+      throw new HttpsError("failed-precondition", "Claim does not belong to the active event.");
+    }
+
+    const isMember = claimData.isMember === true;
+    const now = Date.now();
+    const currentClaimCount = Number.isFinite(liveEvent?.claimCount) ? liveEvent.claimCount : 0;
+
+    tx.set(preclaimRef, {
+      avatarUrl: claimData.avatarUrl || "",
+      createdAt: now,
+      discordUserId: claimData.discordUserId ?? null,
+      displayName: claimData.displayName || "",
+      eventId: activeEventId,
+      isMember,
+      memberEligibleAt: isMember ? getMemberEligibleAtForLiveEvent(liveEvent, now) : null,
+      participantType: claimData.participantType || "",
+      updatedAt: now,
+    }, { merge: true });
+    tx.delete(claimRef);
+    tx.set(liveEventRef, {
+      claimCount: Math.max(0, currentClaimCount - 1),
+      updatedAt: now,
+    }, { merge: true });
+  });
+
+  return { moved: true };
 });
 
 export const syncDisplayFeedForClaimChanges = onDocumentWritten(
@@ -918,7 +1004,7 @@ export const processMemberPreclaims = onSchedule("every 1 minutes", async () => 
     const claimsSnapshot = await tx.get(db.collection(`${LIVE_EVENT_PATH}/claims`));
     const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
     const currentNextClaimNumber = liveEvent.nextClaimNumber ?? 1;
-    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot);
+    const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot, liveEvent.eventId);
     let highestAssignedNumber = 0;
     let assignedCount = 0;
 
@@ -992,7 +1078,7 @@ export const processMemberPreclaimsOnEventUpdate = onDocumentUpdated(
       const claimsSnapshot = await tx.get(db.collection(`${LIVE_EVENT_PATH}/claims`));
       const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
       const currentNextClaimNumber = liveEvent.nextClaimNumber ?? 1;
-      const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot);
+      const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot, liveEvent.eventId);
       let highestAssignedNumber = 0;
       let assignedCount = 0;
 
@@ -1081,12 +1167,19 @@ export const processPreclaimsOnEventStart = onDocumentUpdated(
       const claimsSnapshot = await tx.get(db.collection(`${LIVE_EVENT_PATH}/claims`));
       const liveEvent = liveEventSnapshot.exists ? liveEventSnapshot.data() : {};
       const currentNextClaimNumber = liveEvent.nextClaimNumber ?? 1;
-      const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot);
+      const activeEventId = liveEvent.eventId || afterData.eventId || null;
+      const usedNumbers = buildUsedClaimNumberSet(claimsSnapshot, activeEventId);
       let highestAssignedNumber = 0;
       let assignedCount = 0;
 
       snapshot.forEach((preDoc) => {
         const data = preDoc.data() || {};
+        const targetEventId = liveEvent.eventId || afterData.eventId || null;
+
+        if (targetEventId && data.eventId && data.eventId !== targetEventId) {
+          return;
+        }
+
         const claimId = preDoc.id;
         const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${claimId}`);
         const assignedNumber = getFirstAvailableClaimNumber(usedNumbers);
@@ -1094,7 +1187,7 @@ export const processPreclaimsOnEventStart = onDocumentUpdated(
         writeClaimFromPreclaim({
           tx,
           claimRef,
-          eventId: liveEvent.eventId || afterData.eventId,
+          eventId: targetEventId,
           number: assignedNumber,
           preclaimData: data,
         });

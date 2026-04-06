@@ -1,11 +1,13 @@
 import QRCode from "react-qr-code";
+import {
+  BellRing,
+  Info,
+  Monitor,
+  ScanLine,
+  Settings,
+} from "lucide-react";
 import bbcLogo from "../assets/bbc_logo.png";
 import Spinner from "./Spinner";
-import displayIcon from "../assets/display.svg";
-import infoIcon from "../assets/info.svg";
-import notificationIcon from "../assets/notification.svg";
-import scanIcon from "../assets/scan.svg";
-import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName } from "../titleFonts";
 
 function formatCountdownDuration(remainingMs) {
@@ -90,7 +92,7 @@ function ClaimResultCard({
         aria-label={notificationButtonLabel}
         title={notificationButtonLabel}
       >
-        <img src={notificationIcon} alt="" className="button-icon" />
+        <BellRing aria-hidden="true" className="button-icon icon-animated icon-animate-bell" />
       </button>
       <button
         className="secondary-button claim-corner-button claim-corner-button--right"
@@ -99,7 +101,7 @@ function ClaimResultCard({
         aria-label="Read event info"
         title="Read event info"
       >
-        <img src={infoIcon} alt="" className="button-icon" />
+        <Info aria-hidden="true" className="button-icon icon-animated icon-animate-float" />
       </button>
       <div className="claim-ticket-logo-wrap">
         <img src={bbcLogo} alt="Boiler Book Club logo" className="claim-ticket-logo" />
@@ -211,9 +213,8 @@ function MemberClaimCard({
   claimError,
   claimLoading,
   claimResult,
-  claimRecord,
-  claimPreclaim,
-  eventStartLabel,
+  currentTime,
+  eventStartTimeMs,
   isCheckingAccess,
   isClaimWindowOpen,
   isEventStarted,
@@ -221,24 +222,40 @@ function MemberClaimCard({
   liveEvent,
   liveState,
   loggedIn,
-  memberEarlyAccessLabel,
   memberEarlyAccessTime,
   onManualClaim,
   onStartOAuthGrant,
 }) {
+  const memberEarlyAccessTimeMs =
+    memberEarlyAccessTime instanceof Date ? memberEarlyAccessTime.getTime() : Number(memberEarlyAccessTime);
+  const hasMemberEarlyAccessTime = Number.isFinite(memberEarlyAccessTimeMs);
+  const hasEventStartTime = Number.isFinite(eventStartTimeMs);
+  const assignmentWindowOpensAtMs =
+    isMember && hasMemberEarlyAccessTime ? memberEarlyAccessTimeMs : hasEventStartTime ? eventStartTimeMs : null;
+  const assignmentCountdownMs =
+    Number.isFinite(assignmentWindowOpensAtMs) && Number.isFinite(currentTime)
+      ? Math.max(0, assignmentWindowOpensAtMs - currentTime)
+      : null;
+  const showAssignmentCountdown =
+    loggedIn &&
+    !isCheckingAccess &&
+    !claimLoading &&
+    !authError &&
+    !claimResult &&
+    !isClaimWindowOpen &&
+    Number.isFinite(assignmentCountdownMs) &&
+    assignmentCountdownMs > 0;
+  const assignmentCountdownLabel =
+    isMember && hasMemberEarlyAccessTime ? "Member early check-in opens in" : "Event opens in";
+
   return (
     <div className="entry-card claim-modal-card">
       <p className="eyebrow">Live Event</p>
-      <p className="eyebrow">Reserve Your Spot</p>
+      {!loggedIn ? <p className="eyebrow">Reserve Your Spot</p> : null}
       {liveEvent.timeframeLabel ? <p style={{ margin: 0 }}>{liveEvent.timeframeLabel}</p> : null}
       <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
       <p>
       </p>
-      {claimPreclaim && !claimRecord ? (
-        <div className="entry-message" style={{ marginTop: 8 }}>
-          You're in the queue to reserve a spot — we'll assign your number when the event opens.
-        </div>
-      ) : null}
       {!loggedIn ? (
         <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
           {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
@@ -255,10 +272,13 @@ function MemberClaimCard({
         <>
           <h2>Logged in</h2>
           <p>
-            {isMember && memberEarlyAccessTime
-              ? `Thanks for being a member! You can claim your number early starting at ${memberEarlyAccessLabel}.`
-              : `You'll need to wait for the event to start at ${eventStartLabel} to get your number.`}
+            You&apos;re in the queue to reserve a spot. We&apos;ll assign your number as soon as your window opens.
           </p>
+          {showAssignmentCountdown ? (
+            <p>
+              {assignmentCountdownLabel}: <strong>{formatCountdownDuration(assignmentCountdownMs)}</strong>
+            </p>
+          ) : null}
         </>
       ) : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && isClaimWindowOpen && !claimResult ? (
@@ -325,15 +345,15 @@ function ClaimPage(props) {
       {showControlNavbar ? (
         <div className="bottom-navbar">
           <button className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
-            <img src={scanIcon} alt="" className="button-icon" />
+            <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
             <span>Open Scanner</span>
           </button>
           <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
-            <img src={settingsIcon} alt="" className="button-icon" />
+            <Settings aria-hidden="true" className="button-icon icon-animated icon-animate-spin-slow" />
             <span>Control Panel</span>
           </button>
           <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
-            <img src={displayIcon} alt="" className="button-icon" />
+            <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
             <span>Open Display</span>
           </button>
         </div>

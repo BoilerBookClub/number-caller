@@ -38,6 +38,7 @@ import {
   refreshAllPreclaimMembershipsAsStaff,
   refreshPreclaimMembershipAsStaff,
   removePreclaimAsStaff,
+  moveClaimBackToQueueAsStaff,
   removeClaim,
   subscribeToPreclaim,
 } from "./firebase";
@@ -609,9 +610,18 @@ function App() {
   const [isStaffSelfClaimMode, setIsStaffSelfClaimMode] = useState(false);
   const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const showControlFailureAlert = useCallback((message) => {
+    if (!message) {
+      return;
+    }
+
+    window.alert(message);
+  }, []);
   const autoAdvanceQueueKeyRef = useRef("");
   const hasObservedQueuedPreclaimRef = useRef(false);
   const hasProcessedPreclaimRemovalRef = useRef(false);
+  const hasObservedAssignedClaimRef = useRef(false);
+  const isForcedLogoutPendingRef = useRef(false);
   const confettiModuleRef = useRef(null);
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
@@ -847,6 +857,7 @@ function App() {
   };
 
   const handleLogout = useCallback(() => {
+    isForcedLogoutPendingRef.current = false;
     clearClaimAccessGrant();
     clearConfirmedClaimAccess();
     clearPersistedClaimSession();
@@ -1257,6 +1268,8 @@ function App() {
   useEffect(() => {
     hasObservedQueuedPreclaimRef.current = false;
     hasProcessedPreclaimRemovalRef.current = false;
+    hasObservedAssignedClaimRef.current = false;
+    isForcedLogoutPendingRef.current = false;
   }, [attendeeClaimId]);
 
   // Keep the attendee's preclaim in sync while awaiting the claim document.
@@ -1281,23 +1294,29 @@ function App() {
     }
 
     const forceLogoutIfUnassigned = async () => {
+      isForcedLogoutPendingRef.current = true;
       try {
         await new Promise((resolve) => {
           window.setTimeout(resolve, 400);
         });
         if (cancelled) {
+          isForcedLogoutPendingRef.current = false;
           return;
         }
 
         const existingClaim = await readClaimOnce({ claimId: attendeeClaimId });
         if (!cancelled && !existingClaim) {
           handleLogout();
+          return;
         }
+        isForcedLogoutPendingRef.current = false;
       } catch (e) {
         console.warn("preclaim removal check failed:", e?.message || e);
         if (!cancelled) {
           handleLogout();
+          return;
         }
+        isForcedLogoutPendingRef.current = false;
       }
     };
 
@@ -1340,6 +1359,64 @@ function App() {
       },
     });
   }, [attendeeClaimId, claimPreclaim, claimRecord, handleLogout, liveEvent.eventId, loggedIn]);
+
+  useEffect(() => {
+    const hasAssignedClaimForCurrentEvent =
+      claimRecord?.claimId === attendeeClaimId && claimRecord?.eventId === liveEvent.eventId;
+
+    if (hasAssignedClaimForCurrentEvent) {
+      hasObservedAssignedClaimRef.current = true;
+      return undefined;
+    }
+
+    if (
+      !attendeeClaimId ||
+      !loggedIn ||
+      !liveEvent.eventId ||
+      !hasObservedAssignedClaimRef.current ||
+      isForcedLogoutPendingRef.current
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const forceLogoutIfClaimRemoved = async () => {
+      isForcedLogoutPendingRef.current = true;
+
+      try {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 300);
+        });
+
+        if (cancelled) {
+          isForcedLogoutPendingRef.current = false;
+          return;
+        }
+
+        const existingClaim = await readClaimOnce({ claimId: attendeeClaimId });
+        if (!cancelled && !existingClaim) {
+          handleLogout();
+          return;
+        }
+
+        isForcedLogoutPendingRef.current = false;
+      } catch (e) {
+        console.warn("claim removal check failed:", e?.message || e);
+        if (!cancelled) {
+          handleLogout();
+          return;
+        }
+        isForcedLogoutPendingRef.current = false;
+      }
+    };
+
+    void forceLogoutIfClaimRemoved();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attendeeClaimId, claimRecord, handleLogout, liveEvent.eventId, loggedIn]);
 
   useEffect(() => {
     if (!loggedIn || !user) {
@@ -1393,6 +1470,7 @@ function App() {
           claimAccessGranted &&
           liveEvent.eventId &&
           hasTrustedAttendeeAccess &&
+          !isForcedLogoutPendingRef.current &&
           !isClaimWindowOpen &&
           user &&
           !hasClaimForCurrentEvent &&
@@ -1547,16 +1625,15 @@ function App() {
         console.warn('handleStaffManualClaim: readClaimOnce failed', e?.message || e);
       }
       setClaimError("");
-      setControlMessage("Assigned number.");
     } catch (e) {
        
       console.error("handleStaffManualClaim: assign failed", e && (e.message || e));
-      setControlMessage(e?.message || "Unable to assign number.");
+      showControlFailureAlert(e?.message || "Unable to assign number.");
     } finally {
       setClaimLoading(false);
       setIsStaffSelfClaimMode(false);
     }
-  }, [liveEvent.eventId, loggedIn, user, isMember, avatarUrl, username]);
+  }, [liveEvent.eventId, loggedIn, user, isMember, avatarUrl, username, showControlFailureAlert]);
 
   useEffect(() => {
     // Claim access is allowed while staff mark the event live; ignore the schedule end time here
@@ -1691,50 +1768,37 @@ function App() {
   const handleAssignPreclaimAsStaff = useCallback(async (preclaimId) => {
     try {
       await assignPreclaimAsStaff({ preclaimId });
-      setControlMessage("Assigned queued attendee a number.");
       void fetchPreclaims();
     } catch (e) {
       console.error('assignPreclaimAsStaff failed', e?.message || e);
-      setControlMessage(e?.message || "Unable to assign queued attendee.");
+      showControlFailureAlert(e?.message || "Unable to assign queued attendee.");
       throw e;
     }
-  }, [fetchPreclaims]);
+  }, [fetchPreclaims, showControlFailureAlert]);
 
   const handleRefreshPreclaimMembershipAsStaff = useCallback(async (preclaimId) => {
     try {
       const result = await refreshPreclaimMembershipAsStaff({ preclaimId });
-      setControlMessage(
-        result?.isMember
-          ? "Refreshed membership: attendee is a member."
-          : "Refreshed membership: attendee is not a member.",
-      );
       void fetchPreclaims();
       return result;
     } catch (e) {
       console.error("refreshPreclaimMembershipAsStaff failed", e?.message || e);
-      setControlMessage(e?.message || "Unable to refresh queued attendee membership.");
+      showControlFailureAlert(e?.message || "Unable to refresh queued attendee membership.");
       throw e;
     }
-  }, [fetchPreclaims]);
+  }, [fetchPreclaims, showControlFailureAlert]);
 
   const handleRefreshAllPreclaimMembershipsAsStaff = useCallback(async () => {
     try {
       const result = await refreshAllPreclaimMembershipsAsStaff();
-      const refreshedCount = result?.refreshedCount ?? 0;
-      const membersCount = result?.membersCount ?? 0;
-      setControlMessage(
-        refreshedCount > 0
-          ? `Refreshed ${refreshedCount} queued attendee${refreshedCount === 1 ? "" : "s"} (${membersCount} member${membersCount === 1 ? "" : "s"}).`
-          : "No queued attendees to refresh.",
-      );
       void fetchPreclaims();
       return result;
     } catch (e) {
       console.error("refreshAllPreclaimMembershipsAsStaff failed", e?.message || e);
-      setControlMessage(e?.message || "Unable to refresh queued attendee memberships.");
+      showControlFailureAlert(e?.message || "Unable to refresh queued attendee memberships.");
       throw e;
     }
-  }, [fetchPreclaims]);
+  }, [fetchPreclaims, showControlFailureAlert]);
 
   const handleRemovePreclaimAsStaff = useCallback(async (preclaimId) => {
     try {
@@ -1742,23 +1806,34 @@ function App() {
       setClaimPreclaims((currentPreclaims) =>
         currentPreclaims.filter((preclaim) => preclaim.preclaimId !== preclaimId),
       );
-      setControlMessage("Removed attendee from queue.");
       void fetchPreclaims();
     } catch (e) {
       console.error("removePreclaimAsStaff failed", e?.message || e);
-      setControlMessage(e?.message || "Unable to remove queued attendee.");
+      showControlFailureAlert(e?.message || "Unable to remove queued attendee.");
       throw e;
     }
-  }, [fetchPreclaims]);
+  }, [fetchPreclaims, showControlFailureAlert]);
 
   const handleRemoveClaim = useCallback(async (claimId) => {
     try {
       await removeClaim({ claimId });
     } catch (e) {
       console.error('removeClaim failed', e?.message || e);
+      showControlFailureAlert(e?.message || "Unable to remove attendee.");
       throw e;
     }
-  }, []);
+  }, [showControlFailureAlert]);
+
+  const handleMoveClaimBackToQueueAsStaff = useCallback(async (claimId) => {
+    try {
+      await moveClaimBackToQueueAsStaff({ claimId });
+      void fetchPreclaims();
+    } catch (e) {
+      console.error("moveClaimBackToQueueAsStaff failed", e?.message || e);
+      showControlFailureAlert(e?.message || "Unable to move attendee back to queue.");
+      throw e;
+    }
+  }, [fetchPreclaims, showControlFailureAlert]);
 
   useEffect(() => {
     if (mode === "control" && isEventLive && hasTrustedStaffAccess) {
@@ -1994,9 +2069,9 @@ function App() {
       await pushLiveState(nextState);
     } catch (error) {
       console.error(error.message || "Unable to sync live event state.");
-      setControlMessage(error.message || "Unable to sync live event state.");
+      showControlFailureAlert(error.message || "Unable to sync live event state.");
     }
-  }, [isEventLive]);
+  }, [isEventLive, showControlFailureAlert]);
 
   const increment = useCallback((amount) => {
     if (liveState.current === 0 && totalPeopleWithNumbers === 0) {
@@ -2312,7 +2387,7 @@ function App() {
       setControlMessage("");
       setIsEventDetailsModalOpen(false);
     } catch (error) {
-      setControlMessage(error.message || "Unable to start the event.");
+      showControlFailureAlert(error.message || "Unable to start the event.");
     } finally {
       setControlSaving(false);
     }
@@ -2347,10 +2422,10 @@ function App() {
         ),
         timeframeStart: controlForm.timeframeStart,
       });
-      setControlMessage("Event details saved.");
+      setControlMessage("");
       setIsEventDetailsModalOpen(false);
     } catch (error) {
-      setControlMessage(error.message || "Unable to save event details.");
+      showControlFailureAlert(error.message || "Unable to save event details.");
     } finally {
       setControlSaving(false);
     }
@@ -2373,7 +2448,7 @@ function App() {
       handleLogout();
       changeMode(null, { replace: true });
     } catch (error) {
-      setControlMessage(error.message || "Unable to close the event.");
+      showControlFailureAlert(error.message || "Unable to close the event.");
     } finally {
       setControlSaving(false);
     }
@@ -2500,6 +2575,7 @@ function App() {
           onRefreshAllPreclaimMembershipsAsStaff={handleRefreshAllPreclaimMembershipsAsStaff}
           onRemovePreclaimAsStaff={handleRemovePreclaimAsStaff}
           onRemoveClaim={handleRemoveClaim}
+          onMoveClaimBackToQueueAsStaff={handleMoveClaimBackToQueueAsStaff}
           showPreclaimQueue={showPreclaimQueue}
         />
       </Suspense>
