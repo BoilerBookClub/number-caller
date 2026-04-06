@@ -376,6 +376,16 @@ body.modal-scroll-locked {
   margin-top: 1.5rem;
 }
 
+.claim-status-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.claim-status-card {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .claim-qr-box,
 .scanner-preview {
   margin: 1rem auto;
@@ -401,6 +411,7 @@ body.modal-scroll-locked {
   flex-direction: column;
   min-height: 0;
   position: relative;
+  overflow-y: auto;
 }
 
 .roster-card--with-graphs {
@@ -417,6 +428,14 @@ body.modal-scroll-locked {
   padding-left: 4rem;
   padding-right: 4rem;
   margin-bottom: 0.85rem;
+}
+
+.roster-card-sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #ffffff;
+  padding-top: 0.2rem;
 }
 
 .roster-card-title-block {
@@ -439,9 +458,21 @@ body.modal-scroll-locked {
   text-align: center;
 }
 
-.roster-card .roster-list {
+.roster-list--attendees {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.roster-list--queue {
+  max-height: min(44vh, 20rem);
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.roster-list--group {
+  max-height: min(70vh, 44rem);
   overflow-y: auto;
   padding-right: 0.35rem;
 }
@@ -449,6 +480,24 @@ body.modal-scroll-locked {
 .queue-card {
   margin-left: auto;
   margin-right: auto;
+  max-height: min(84vh, 52rem);
+  overflow-y: auto;
+}
+
+.queue-card--settings-open {
+  max-height: min(92vh, 66rem);
+}
+
+.queue-card-sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: #ffffff;
+  padding-bottom: 0.5rem;
+}
+
+.queue-card-body {
+  min-height: 0;
 }
 
 .control-event-header {
@@ -1114,6 +1163,32 @@ body.modal-scroll-locked {
 .roster-remove-button:focus {
   outline: none;
   box-shadow: 0 0 0 4px rgba(198, 40, 40, 0.14);
+}
+
+.roster-inline-action {
+  margin: 0;
+  min-height: 2rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.roster-queue-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid #ececec;
+}
+
+.roster-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+}
+
+.roster-queue-header .queue-backlog-title {
+  margin: 0;
 }
 
 .scanner-helper-text {
@@ -1910,7 +1985,7 @@ body.modal-scroll-locked {
 
 .stats-stack {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   align-self: stretch;
 }
@@ -2264,6 +2339,17 @@ button:disabled {
   font-weight: 900;
 }
 
+.display-feed-name {
+  font-weight: 900;
+}
+
+.display-feed-name--member {
+  display: inline-block;
+  line-height: 1;
+  text-shadow: none;
+  animation-duration: 14s;
+}
+
 .display-feed-avatar {
   width: 2.5rem;
   height: 2.5rem;
@@ -2511,7 +2597,7 @@ li {
   }
 
   .stats-stack {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.55rem;
   }
 
@@ -2672,13 +2758,30 @@ li {
     max-width: 100%;
   }
 
-  .roster-card {
-    max-height: none;
+  .queue-card {
+    max-height: min(84vh, 44rem);
   }
 
-  .roster-card .roster-list {
-    overflow-y: visible;
-    padding-right: 0;
+  .queue-card--settings-open {
+    max-height: min(92vh, 56rem);
+  }
+
+  .roster-card {
+    max-height: min(76vh, 42rem);
+  }
+
+  .roster-list--attendees,
+  .roster-list--queue,
+  .roster-list--group {
+    padding-right: 0.2rem;
+  }
+
+  .roster-list--queue {
+    max-height: min(40vh, 18rem);
+  }
+
+  .roster-list--group {
+    max-height: min(64vh, 40rem);
   }
 
   .roster-primary,
@@ -2704,6 +2807,12 @@ li {
   .roster-badge {
     padding: 0.22rem 0.5rem;
     font-size: 0.76rem;
+  }
+
+  .roster-inline-action {
+    min-height: 1.8rem;
+    padding: 0.3rem 0.62rem;
+    font-size: 0.7rem;
   }
 
   .bottom-navbar {

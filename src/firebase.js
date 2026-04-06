@@ -80,6 +80,13 @@ const assignPreclaimIfQueuedCallable = firebaseEnabled
   : null;
 const listPreclaimsCallable = firebaseEnabled ? httpsCallable(functions, "listPreclaims") : null;
 const assignPreclaimAsStaffCallable = firebaseEnabled ? httpsCallable(functions, "assignPreclaimAsStaff") : null;
+const removePreclaimAsStaffCallable = firebaseEnabled ? httpsCallable(functions, "removePreclaimAsStaff") : null;
+const refreshPreclaimMembershipAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "refreshPreclaimMembershipAsStaff")
+  : null;
+const refreshAllPreclaimMembershipsAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "refreshAllPreclaimMembershipsAsStaff")
+  : null;
 const removeClaimCallable = firebaseEnabled ? httpsCallable(functions, "removeClaim") : null;
 const readPreclaimForUserCallable = firebaseEnabled
   ? httpsCallable(functions, "readPreclaimForUser")
@@ -143,6 +150,36 @@ export const assignPreclaimAsStaff = async ({ preclaimId }) => {
   }
 
   const result = await assignPreclaimAsStaffCallable({ preclaimId });
+
+  return result.data;
+};
+
+export const removePreclaimAsStaff = async ({ preclaimId }) => {
+  if (!firebaseEnabled || !removePreclaimAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await removePreclaimAsStaffCallable({ preclaimId });
+
+  return result.data;
+};
+
+export const refreshPreclaimMembershipAsStaff = async ({ preclaimId }) => {
+  if (!firebaseEnabled || !refreshPreclaimMembershipAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await refreshPreclaimMembershipAsStaffCallable({ preclaimId });
+
+  return result.data;
+};
+
+export const refreshAllPreclaimMembershipsAsStaff = async () => {
+  if (!firebaseEnabled || !refreshAllPreclaimMembershipsAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await refreshAllPreclaimMembershipsAsStaffCallable({});
 
   return result.data;
 };
@@ -265,6 +302,27 @@ export const readPreclaimOnce = async ({ claimId }) => {
   const snapshot = await getDoc(preclaimRef);
 
   return snapshot.exists() ? snapshot.data() : null;
+};
+
+export const subscribeToPreclaim = ({ claimId, onPreclaim, onError }) => {
+  if (!firebaseEnabled || !claimId) {
+    return () => {};
+  }
+
+  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
+
+  return onSnapshot(
+    preclaimRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onPreclaim(null);
+        return;
+      }
+
+      onPreclaim(snapshot.data());
+    },
+    onError,
+  );
 };
 
 export const subscribeToDisplayFeed = ({ onFeed, onError }) => {
@@ -448,6 +506,11 @@ export const claimEventNumber = async ({
         shouldUpdate = true;
       }
 
+      if (!existingClaim.joinedAt) {
+        claimUpdates.joinedAt = existingClaim.claimedAt ?? serverTimestamp();
+        shouldUpdate = true;
+      }
+
       if (shouldUpdate) {
         transaction.update(claimRef, claimUpdates);
       }
@@ -469,6 +532,7 @@ export const claimEventNumber = async ({
     transaction.set(claimRef, {
       avatarUrl: avatarUrl ?? "",
       claimedAt: serverTimestamp(),
+      joinedAt: serverTimestamp(),
       discordUserId: discordUserId ?? null,
       displayName,
       email: email ?? null,

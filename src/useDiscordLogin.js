@@ -37,6 +37,8 @@ const clearStoredSession = () => {
   localStorage.removeItem("discordUser");
   localStorage.removeItem("discordUsername");
   localStorage.removeItem("discordAvatarUrl");
+  localStorage.removeItem("discordIsMember");
+  localStorage.removeItem("discordHasFullAccess");
   localStorage.removeItem("accessToken");
   localStorage.removeItem("loginTime");
 };
@@ -45,6 +47,8 @@ const readStoredSession = () => {
   const storedUser = localStorage.getItem("discordUser");
   const storedUsername = localStorage.getItem("discordUsername");
   const storedAvatarUrl = localStorage.getItem("discordAvatarUrl");
+  const storedIsMember = localStorage.getItem("discordIsMember");
+  const storedHasFullAccess = localStorage.getItem("discordHasFullAccess");
   const storedToken = localStorage.getItem("accessToken");
   const loginTime = Number(localStorage.getItem("loginTime"));
   const sessionExpired =
@@ -55,6 +59,8 @@ const readStoredSession = () => {
   return {
     accessToken: sessionExpired ? "" : storedToken,
     avatarUrl: sessionExpired ? "" : storedAvatarUrl || "",
+    hasFullAccess: sessionExpired ? false : storedHasFullAccess === "true",
+    isMember: sessionExpired ? false : storedIsMember === "true",
     sessionExpired,
     user: sessionExpired ? "" : storedUser || "",
     username: sessionExpired ? "" : storedUsername || storedUser || "",
@@ -71,8 +77,8 @@ export default function useDiscordLogin() {
   const [loading, setLoading] = useState(true);
   const [roleLoading, setRoleLoading] = useState(false);
   const [accessResolved, setAccessResolved] = useState(false);
-  const [isMember, setIsMember] = useState(false);
-  const [hasFullAccess, setHasFullAccess] = useState(false);
+  const [isMember, setIsMember] = useState(initialSession.isMember);
+  const [hasFullAccess, setHasFullAccess] = useState(initialSession.hasFullAccess);
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
@@ -108,6 +114,12 @@ export default function useDiscordLogin() {
     const returnPath =
       readPostLoginPath() ?? normalizeReturnPath(params.get("state"));
     const tokenToUse = token || storedAccessToken;
+    const shouldWaitForFirebaseAuth =
+      !token && Boolean(storedAccessToken) && Boolean(auth) && !firebaseAuthReady;
+
+    if (shouldWaitForFirebaseAuth) {
+      return undefined;
+    }
 
     if (!tokenToUse) {
       setAccessResolved(false);
@@ -147,12 +159,29 @@ export default function useDiscordLogin() {
         localStorage.setItem("discordUser", profile.user || "");
         localStorage.setItem("discordUsername", profile.username || profile.user || "");
         localStorage.setItem("discordAvatarUrl", profile.avatarUrl || "");
+        localStorage.setItem("discordIsMember", profile.isMember ? "true" : "false");
+        localStorage.setItem("discordHasFullAccess", profile.hasFullAccess ? "true" : "false");
         localStorage.setItem("accessToken", tokenToUse);
         localStorage.setItem("loginTime", Date.now().toString());
         setAuthError("");
       })
       .catch((error) => {
         if (isDisposed) {
+          return;
+        }
+
+        const isMembershipCheckUnavailable =
+          error?.code === "functions/unavailable" ||
+          String(error?.message || "").includes("Unable to verify Discord membership right now");
+
+        if (isMembershipCheckUnavailable && storedSession.user) {
+          setUser(storedSession.user || "");
+          setUsername(storedSession.username || storedSession.user || "");
+          setAvatarUrl(storedSession.avatarUrl || "");
+          setIsMember(Boolean(storedSession.isMember));
+          setHasFullAccess(Boolean(storedSession.hasFullAccess));
+          setAccessResolved(true);
+          setAuthError(error.message || "Unable to verify Discord membership right now. Please try logging in again.");
           return;
         }
 
@@ -176,7 +205,7 @@ export default function useDiscordLogin() {
     return () => {
       isDisposed = true;
     };
-  }, []);
+  }, [firebaseAuthReady]);
 
   const startOAuthGrant = (returnPath) => {
     const redirectUri = encodeURIComponent(buildDiscordRedirectUri());

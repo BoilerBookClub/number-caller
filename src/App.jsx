@@ -31,13 +31,15 @@ import {
   subscribeToLiveEvent,
   updateLiveEventDetails,
   assignPreclaimIfQueued,
-  updatePreclaimMembership,
   readAllPreclaims,
   readClaimOnce,
   readPreclaimOnce,
   assignPreclaimAsStaff,
+  refreshAllPreclaimMembershipsAsStaff,
+  refreshPreclaimMembershipAsStaff,
+  removePreclaimAsStaff,
   removeClaim,
-  signInWithDiscordAccessToken,
+  subscribeToPreclaim,
 } from "./firebase";
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
@@ -283,7 +285,9 @@ const normalizeRosterClaim = (nextClaim) => {
     claimId: nextClaim.claimId,
     avatarUrl: nextClaim.avatarUrl ?? "",
     claimedAtMs: getTimestampMs(nextClaim.claimedAt),
+    joinedAtMs: getTimestampMs(nextClaim.joinedAt),
     displayName: resolvedDisplayName,
+    discordUserId: nextClaim.discordUserId ?? null,
     eventId: nextClaim.eventId ?? null,
     isMember: nextClaim.isMember ?? false,
     itemClaimedAtMsHistory: getTimestampMsList(nextClaim.itemClaimedAtMsHistory),
@@ -592,7 +596,6 @@ function App() {
   const [claimError, setClaimError] = useState("");
   const [claimLoading, setClaimLoading] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
-  const [membershipRefreshPrompt, setMembershipRefreshPrompt] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(false);
   const [isEventDetailsModalOpen, setIsEventDetailsModalOpen] = useState(false);
@@ -607,6 +610,8 @@ function App() {
   const [displayFeedItems, setDisplayFeedItems] = useState([]);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const autoAdvanceQueueKeyRef = useRef("");
+  const hasObservedQueuedPreclaimRef = useRef(false);
+  const hasProcessedPreclaimRemovalRef = useRef(false);
   const confettiModuleRef = useRef(null);
   const previousCurrentRef = useRef(initialState.current);
   const previousEventIdRef = useRef(null);
@@ -660,6 +665,9 @@ function App() {
     !eventStartTime ||
     currentTime >= eventStartTime.getTime() ||
     (isMember && memberEarlyAccessTime && currentTime >= memberEarlyAccessTime.getTime());
+  // Queue management is only shown before the event start time.
+  // If staff edits timeframeStart to a later time, this flips back to true and re-opens queue UI.
+  const showPreclaimQueue = isEventLive && !isEventStarted;
   const liveCallLabel =
     liveState.current === 0 ? "Starting Soon" : `${liveState.last + 1}-${liveState.current}`;
   const eventStartLabel = liveEvent.timeframeStart
@@ -1246,9 +1254,16 @@ function App() {
     });
   }, [attendeeClaimId, hasTrustedAttendeeAccess]);
 
-  // Keep the attendee's preclaim in state while awaiting the claim document.
+  useEffect(() => {
+    hasObservedQueuedPreclaimRef.current = false;
+    hasProcessedPreclaimRemovalRef.current = false;
+  }, [attendeeClaimId]);
+
+  // Keep the attendee's preclaim in sync while awaiting the claim document.
+  // If staff remove someone from queue, force a logout on the attendee side.
   useEffect(() => {
     let cancelled = false;
+    const hadQueuedPreclaimAtMount = claimPreclaim?.eventId === liveEvent.eventId;
 
     if (!attendeeClaimId || !loggedIn || !liveEvent.eventId) {
       setClaimPreclaim(null);
@@ -1261,22 +1276,70 @@ function App() {
       return undefined;
     }
 
-    const fetchPreclaim = async () => {
+    if (hadQueuedPreclaimAtMount) {
+      hasObservedQueuedPreclaimRef.current = true;
+    }
+
+    const forceLogoutIfUnassigned = async () => {
       try {
-        const preclaim = await readPreclaimOnce({ claimId: attendeeClaimId });
-        if (!cancelled) setClaimPreclaim(preclaim ?? null);
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 400);
+        });
+        if (cancelled) {
+          return;
+        }
+
+        const existingClaim = await readClaimOnce({ claimId: attendeeClaimId });
+        if (!cancelled && !existingClaim) {
+          handleLogout();
+        }
       } catch (e) {
-        console.warn('readPreclaimOnce failed', e?.message || e);
-        if (!cancelled) setClaimPreclaim(null);
+        console.warn("preclaim removal check failed:", e?.message || e);
+        if (!cancelled) {
+          handleLogout();
+        }
       }
     };
 
-    void fetchPreclaim();
+    return subscribeToPreclaim({
+      claimId: attendeeClaimId,
+      onPreclaim: (nextPreclaim) => {
+        setClaimPreclaim(nextPreclaim ?? null);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [attendeeClaimId, loggedIn, liveEvent.eventId, claimRecord]);
+        if (nextPreclaim) {
+          hasObservedQueuedPreclaimRef.current = true;
+          hasProcessedPreclaimRemovalRef.current = false;
+          return;
+        }
+
+        if (!hasObservedQueuedPreclaimRef.current || hasProcessedPreclaimRemovalRef.current) {
+          return;
+        }
+
+        hasProcessedPreclaimRemovalRef.current = true;
+
+        void forceLogoutIfUnassigned();
+      },
+      onError: (error) => {
+        const errorCode = String(error?.code || "");
+        const isPermissionDenied =
+          errorCode === "permission-denied" ||
+          errorCode === "permission_denied" ||
+          errorCode === "firestore/permission-denied";
+
+        const hadQueuedPresence =
+          hasObservedQueuedPreclaimRef.current || hadQueuedPreclaimAtMount;
+
+        if (isPermissionDenied && hadQueuedPresence && !hasProcessedPreclaimRemovalRef.current) {
+          hasProcessedPreclaimRemovalRef.current = true;
+          void forceLogoutIfUnassigned();
+          return;
+        }
+
+        console.error(error.message || "Unable to sync queued attendee.");
+      },
+    });
+  }, [attendeeClaimId, claimPreclaim, claimRecord, handleLogout, liveEvent.eventId, loggedIn]);
 
   useEffect(() => {
     if (!loggedIn || !user) {
@@ -1316,6 +1379,10 @@ function App() {
       userId: user,
     });
 
+    const hasClaimForCurrentEvent =
+      Boolean(claimRecord?.claimId) && claimRecord?.eventId === liveEvent.eventId;
+    const hasPreclaimForCurrentEvent = claimPreclaim?.eventId === liveEvent.eventId;
+
     // If the user has claim access but the claim window isn't open yet,
     // enqueue them into the pre-claim queue so they'll be assigned automatically
     // when the event opens.
@@ -1328,7 +1395,8 @@ function App() {
           hasTrustedAttendeeAccess &&
           !isClaimWindowOpen &&
           user &&
-          !attendeeClaimId
+          !hasClaimForCurrentEvent &&
+          !hasPreclaimForCurrentEvent
         ) {
           await enqueuePreclaim({
             claimKey: `discord:${user}`,
@@ -1363,7 +1431,8 @@ function App() {
     user,
     memberEarlyAccessTime,
     isClaimWindowOpen,
-    attendeeClaimId,
+    claimRecord,
+    claimPreclaim,
     avatarUrl,
     username,
     isMember,
@@ -1489,62 +1558,6 @@ function App() {
     }
   }, [liveEvent.eventId, loggedIn, user, isMember, avatarUrl, username]);
 
-  const refreshMembershipAndUpdatePreclaim = useCallback(async () => {
-    if (!loggedIn || !user || !liveEvent.eventId) {
-      return;
-    }
-
-    // Try to reuse stored Discord access token if available
-    const storedAccessToken = window.localStorage.getItem("accessToken");
-
-    let profile = null;
-
-    if (storedAccessToken) {
-      try {
-        profile = await signInWithDiscordAccessToken({ accessToken: storedAccessToken });
-      } catch (e) {
-        // If the stored token is invalid or expired, do NOT auto-redirect.
-        // Instead, surface a re-auth prompt so the user can re-login explicitly.
-         
-        console.warn("refresh membership sign-in failed:", e?.message || e);
-        setMembershipRefreshPrompt(true);
-        return;
-      }
-    }
-
-    try {
-      const memberEligibleAt = profile.isMember && memberEarlyAccessTime
-        ? memberEarlyAccessTime.getTime()
-        : null;
-
-      await updatePreclaimMembership({
-        claimKey: `discord:${user}`,
-        eventId: liveEvent.eventId,
-        isMember: profile.isMember,
-        memberEligibleAt,
-        displayName: profile.username || username || user,
-        avatarUrl: profile.avatarUrl || avatarUrl,
-      });
-
-      // If claim window open, try to assign immediately
-      if (isClaimWindowOpen) {
-        void assignDiscordNumber();
-      }
-    } catch (e) {
-       
-      console.error("Unable to update preclaim membership:", e?.message || e);
-    }
-  }, [
-    loggedIn,
-    user,
-    liveEvent.eventId,
-    memberEarlyAccessTime,
-    username,
-    avatarUrl,
-    isClaimWindowOpen,
-    assignDiscordNumber,
-  ]);
-
   useEffect(() => {
     // Claim access is allowed while staff mark the event live; ignore the schedule end time here
     if (!isEventLive || !liveEvent.eventId || !liveEvent.claimAccessSecret) {
@@ -1650,13 +1663,90 @@ function App() {
     }
   }, [hasTrustedStaffAccess, liveEvent.eventId]);
 
+  useEffect(() => {
+    if (!showPreclaimQueue || mode !== "control" || !hasTrustedStaffAccess) {
+      setClaimPreclaims([]);
+      return undefined;
+    }
+
+    let isDisposed = false;
+
+    const refreshPreclaims = async () => {
+      if (!isDisposed) {
+        await fetchPreclaims();
+      }
+    };
+
+    void refreshPreclaims();
+    const intervalId = window.setInterval(() => {
+      void refreshPreclaims();
+    }, 5000);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [fetchPreclaims, hasTrustedStaffAccess, mode, showPreclaimQueue]);
+
   const handleAssignPreclaimAsStaff = useCallback(async (preclaimId) => {
     try {
       await assignPreclaimAsStaff({ preclaimId });
-      // refresh lists
+      setControlMessage("Assigned queued attendee a number.");
       void fetchPreclaims();
     } catch (e) {
       console.error('assignPreclaimAsStaff failed', e?.message || e);
+      setControlMessage(e?.message || "Unable to assign queued attendee.");
+      throw e;
+    }
+  }, [fetchPreclaims]);
+
+  const handleRefreshPreclaimMembershipAsStaff = useCallback(async (preclaimId) => {
+    try {
+      const result = await refreshPreclaimMembershipAsStaff({ preclaimId });
+      setControlMessage(
+        result?.isMember
+          ? "Refreshed membership: attendee is a member."
+          : "Refreshed membership: attendee is not a member.",
+      );
+      void fetchPreclaims();
+      return result;
+    } catch (e) {
+      console.error("refreshPreclaimMembershipAsStaff failed", e?.message || e);
+      setControlMessage(e?.message || "Unable to refresh queued attendee membership.");
+      throw e;
+    }
+  }, [fetchPreclaims]);
+
+  const handleRefreshAllPreclaimMembershipsAsStaff = useCallback(async () => {
+    try {
+      const result = await refreshAllPreclaimMembershipsAsStaff();
+      const refreshedCount = result?.refreshedCount ?? 0;
+      const membersCount = result?.membersCount ?? 0;
+      setControlMessage(
+        refreshedCount > 0
+          ? `Refreshed ${refreshedCount} queued attendee${refreshedCount === 1 ? "" : "s"} (${membersCount} member${membersCount === 1 ? "" : "s"}).`
+          : "No queued attendees to refresh.",
+      );
+      void fetchPreclaims();
+      return result;
+    } catch (e) {
+      console.error("refreshAllPreclaimMembershipsAsStaff failed", e?.message || e);
+      setControlMessage(e?.message || "Unable to refresh queued attendee memberships.");
+      throw e;
+    }
+  }, [fetchPreclaims]);
+
+  const handleRemovePreclaimAsStaff = useCallback(async (preclaimId) => {
+    try {
+      await removePreclaimAsStaff({ preclaimId });
+      setClaimPreclaims((currentPreclaims) =>
+        currentPreclaims.filter((preclaim) => preclaim.preclaimId !== preclaimId),
+      );
+      setControlMessage("Removed attendee from queue.");
+      void fetchPreclaims();
+    } catch (e) {
+      console.error("removePreclaimAsStaff failed", e?.message || e);
+      setControlMessage(e?.message || "Unable to remove queued attendee.");
       throw e;
     }
   }, [fetchPreclaims]);
@@ -2362,13 +2452,16 @@ function App() {
           controlForm={controlForm}
           controlMessage={controlMessage}
           controlSaving={controlSaving}
+          currentTime={currentTime}
           currentEventClaims={currentEventClaims}
           currentRound={currentRound}
           autoAdvanceThresholdPercent={autoAdvanceThresholdPercent}
           hasPersonalClaim={Boolean(effectiveClaimResult)}
           isEventDetailsModalOpen={isEventDetailsModalOpen}
           isEventLive={isEventLive}
+          isEventStarted={isEventStarted}
           isLastGroup={isLastGroup}
+          eventStartTimeMs={eventStartTime ? eventStartTime.getTime() : null}
           liveEvent={liveEvent}
           liveState={liveState}
           onActivateFinalCall={activateFinalCall}
@@ -2402,11 +2495,12 @@ function App() {
           scannerVideoRef={scannerVideoRef}
           totalPeopleWithNumbers={totalPeopleWithNumbers}
           preclaims={claimPreclaims}
-          onFetchPreclaims={fetchPreclaims}
           onAssignPreclaimAsStaff={handleAssignPreclaimAsStaff}
+          onRefreshPreclaimMembershipAsStaff={handleRefreshPreclaimMembershipAsStaff}
+          onRefreshAllPreclaimMembershipsAsStaff={handleRefreshAllPreclaimMembershipsAsStaff}
+          onRemovePreclaimAsStaff={handleRemovePreclaimAsStaff}
           onRemoveClaim={handleRemoveClaim}
-          liveEvent={liveEvent}
-          showPreclaimQueue={isEventLive && !isClaimWindowOpen}
+          showPreclaimQueue={showPreclaimQueue}
         />
       </Suspense>
     );
@@ -2460,8 +2554,10 @@ function App() {
       claimQrPayload={claimQrPayload}
       claimRecord={claimRecord}
       claimResult={effectiveClaimResult}
+      currentTime={currentTime}
       currentRound={currentRound}
       eventStartLabel={eventStartLabel}
+      eventStartTimeMs={eventStartTime ? eventStartTime.getTime() : null}
       hasClaimedCurrentRound={hasClaimedCurrentRound}
       isClaimRulesOpen={isClaimRulesOpen}
       isCheckingAccess={isCheckingAccess}
@@ -2484,14 +2580,12 @@ function App() {
       }}
       onOpenControlPanel={() => changeMode("control")}
       onOpenDisplayScreen={openDisplayScreen}
-      membershipRefreshPrompt={membershipRefreshPrompt}
       onLogout={handleLogout}
       onOpenBookList={openBookList}
       onStartOAuthGrant={() => startOAuthGrant()}
       onToggleClaimNotifications={toggleClaimNotifications}
       showControlNavbar={hasTrustedStaffAccess}
       showClaimQr={showClaimQr}
-      onRefreshMembership={refreshMembershipAndUpdatePreclaim}
       hasTrustedStaffAccess={hasTrustedStaffAccess}
       setScannerActive={setScannerActive}
       setScanFeedback={setScanFeedback}

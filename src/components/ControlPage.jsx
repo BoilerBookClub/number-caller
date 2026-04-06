@@ -47,6 +47,23 @@ function formatGraphWindowLabel(durationMs) {
   return `${hours} hr ${minutes} min`;
 }
 
+function formatStatusDuration(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return "--:--";
+  }
+
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function buildYAxisTicks(maxCount, chartHeight) {
   if (!Number.isFinite(maxCount) || maxCount <= 0) {
     return [
@@ -148,6 +165,92 @@ function buildTimelineGraph(timestamps) {
     sortedTimestamps,
     xAxisTicks,
     yAxisTicks,
+  };
+}
+
+function getTimestampMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value?.toMillis === "function") {
+    const timestampMs = value.toMillis();
+    return Number.isFinite(timestampMs) ? timestampMs : null;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const parsedValue = Date.parse(value);
+  return Number.isNaN(parsedValue) ? null : parsedValue;
+}
+
+function getJoinedIdentityKey({ discordUserId, fallbackId }) {
+  const normalizedDiscordUserId = typeof discordUserId === "string" ? discordUserId.trim() : "";
+
+  if (normalizedDiscordUserId) {
+    return `discord:${normalizedDiscordUserId}`;
+  }
+
+  if (fallbackId) {
+    return `record:${String(fallbackId)}`;
+  }
+
+  return null;
+}
+
+function buildJoinedTimeline({ claims, preclaims }) {
+  const allIdentityKeys = new Set();
+  const joinedAtByIdentity = new Map();
+
+  const registerJoinedRecord = ({ identityKey, joinedAtMs }) => {
+    if (!identityKey) {
+      return;
+    }
+
+    allIdentityKeys.add(identityKey);
+
+    if (!Number.isFinite(joinedAtMs)) {
+      return;
+    }
+
+    const currentJoinedAtMs = joinedAtByIdentity.get(identityKey);
+    if (!Number.isFinite(currentJoinedAtMs) || joinedAtMs < currentJoinedAtMs) {
+      joinedAtByIdentity.set(identityKey, joinedAtMs);
+    }
+  };
+
+  (claims || []).forEach((claim) => {
+    registerJoinedRecord({
+      identityKey: getJoinedIdentityKey({
+        discordUserId: claim.discordUserId,
+        fallbackId: claim.claimId,
+      }),
+      joinedAtMs: getTimestampMs(claim.joinedAtMs) ?? getTimestampMs(claim.claimedAtMs),
+    });
+  });
+
+  (preclaims || []).forEach((preclaim) => {
+    registerJoinedRecord({
+      identityKey: getJoinedIdentityKey({
+        discordUserId: preclaim.discordUserId,
+        fallbackId: preclaim.preclaimId,
+      }),
+      joinedAtMs: getTimestampMs(preclaim.createdAt),
+    });
+  });
+
+  return {
+    missingCount: Math.max(0, allIdentityKeys.size - joinedAtByIdentity.size),
+    timestamps: Array.from(joinedAtByIdentity.values()).sort(
+      (leftTimestamp, rightTimestamp) => leftTimestamp - rightTimestamp,
+    ),
+    total: allIdentityKeys.size,
   };
 }
 
@@ -306,7 +409,7 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
           </div>
         ) : null}
       </div>
-      <div className="roster-list" role="list">
+      <div className="roster-list roster-list--group" role="list">
         {claims.map((claim) => {
           const hasClaimedCurrentGroup = claim.redeemedRound === currentRound;
           const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
@@ -355,7 +458,7 @@ function BacklogList({ claims }) {
         </div>
       </div>
       {!claims.length ? <p>No backlog for this round.</p> : null}
-      <div className="roster-list" role="list">
+      <div className="roster-list roster-list--group" role="list">
         {claims.map((claim) => {
           const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
@@ -596,6 +699,8 @@ function TimelineChart({
 
 function AttendeeGraphsPanel({
   claims,
+  joinedNote,
+  joinedTimestamps,
   isItemClaimsVisible,
   isNumberClaimsVisible,
   onExpandItemClaims,
@@ -606,10 +711,6 @@ function AttendeeGraphsPanel({
   onShowItemClaims,
   onShowNumberClaims,
 }) {
-  const numberClaimTimestamps = claims
-    .map((claim) => claim.claimedAtMs)
-    .filter((timestampMs) => Number.isFinite(timestampMs));
-  const numberClaimMissingCount = claims.length - numberClaimTimestamps.length;
   const itemClaimTimestamps = claims
     .flatMap((claim) => {
       if (claim.itemClaimedAtMsHistory.length > 0) {
@@ -632,9 +733,6 @@ function AttendeeGraphsPanel({
 
     return missingCount + Math.max(0, claim.itemsClaimedCount);
   }, 0);
-  const numberClaimNote = numberClaimMissingCount > 0
-    ? `${numberClaimMissingCount} attendee claim${numberClaimMissingCount === 1 ? " is" : "s are"} missing a timestamp and excluded from this chart.`
-    : "";
   const itemClaimNote = untimestampedItemClaimCount > 0
     ? `${untimestampedItemClaimCount} older item claim${untimestampedItemClaimCount === 1 ? " is" : "s are"} missing timestamps and excluded from this chart.`
     : "";
@@ -653,7 +751,7 @@ function AttendeeGraphsPanel({
               className="secondary-button roster-graphs-toolbar-button"
               onClick={onShowNumberClaims}
             >
-              Show Number Claims
+              Show Joined
             </button>
           ) : null}
           {!isItemClaimsVisible ? (
@@ -669,15 +767,15 @@ function AttendeeGraphsPanel({
       ) : null}
       {isNumberClaimsVisible ? (
         <TimelineChart
-          emptyText="No timestamped number claims yet."
-          note={numberClaimNote}
+          emptyText="No timestamped joins yet."
+          note={joinedNote}
           onExpand={onExpandNumberClaims}
           onClose={onHideNumberClaims}
           showCloseButton={shouldShowChartCloseButtons}
-          timestamps={numberClaimTimestamps}
-          title="Number Claims"
+          timestamps={joinedTimestamps}
+          title="Joined"
           tone="claims"
-          totalLabel="Claims"
+          totalLabel="Joined"
         />
       ) : null}
       {isItemClaimsVisible ? (
@@ -697,11 +795,32 @@ function AttendeeGraphsPanel({
   );
 }
 
-function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPreclaims, onAssignPreclaimAsStaff, onRemoveClaim, showPreclaimQueue }) {
+function FullRoster({
+  claims,
+  isGraphOpen,
+  onToggleGraph,
+  preclaims,
+  onAssignPreclaimAsStaff,
+  onRefreshAllPreclaimMembershipsAsStaff,
+  onRefreshPreclaimMembershipAsStaff,
+  onRemoveClaim,
+  onRemovePreclaimAsStaff,
+  showPreclaimQueue,
+}) {
   const [expandedGraphTone, setExpandedGraphTone] = useState("");
   const [isGraphPanelMounted, setIsGraphPanelMounted] = useState(false);
   const [isNumberClaimsVisible, setIsNumberClaimsVisible] = useState(true);
   const [isItemClaimsVisible, setIsItemClaimsVisible] = useState(true);
+  const [refreshingPreclaimIds, setRefreshingPreclaimIds] = useState(() => new Set());
+  const [isRefreshingAllPreclaims, setIsRefreshingAllPreclaims] = useState(false);
+  const joinedTimeline = buildJoinedTimeline({
+    claims,
+    preclaims,
+  });
+  const joinedTimestamps = joinedTimeline.timestamps;
+  const joinedNote = joinedTimeline.missingCount > 0
+    ? `${joinedTimeline.missingCount} attendee join${joinedTimeline.missingCount === 1 ? " is" : "s are"} missing a timestamp and excluded from this chart.`
+    : "";
 
   useEffect(() => {
     if (isGraphOpen) {
@@ -730,25 +849,15 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPrec
     }
   }, [expandedGraphTone, isGraphOpen]);
 
-  useEffect(() => {
-    if (showPreclaimQueue && typeof onFetchPreclaims === "function") {
-      void onFetchPreclaims();
-    }
-  }, [showPreclaimQueue, onFetchPreclaims]);
-
   const expandedGraphConfig =
     expandedGraphTone === "claims"
       ? {
-          emptyText: "No timestamped number claims yet.",
-          note: claims.filter((claim) => Number.isFinite(claim.claimedAtMs)).length < claims.length
-            ? `${claims.length - claims.filter((claim) => Number.isFinite(claim.claimedAtMs)).length} attendee claim${claims.length - claims.filter((claim) => Number.isFinite(claim.claimedAtMs)).length === 1 ? " is" : "s are"} missing a timestamp and excluded from this chart.`
-            : "",
-          timestamps: claims
-            .map((claim) => claim.claimedAtMs)
-            .filter((timestampMs) => Number.isFinite(timestampMs)),
-          title: "Number Claims",
+          emptyText: "No timestamped joins yet.",
+          note: joinedNote,
+          timestamps: joinedTimestamps,
+          title: "Joined",
           tone: "claims",
-          totalLabel: "Claims",
+          totalLabel: "Joined",
         }
       : expandedGraphTone === "items"
         ? {
@@ -807,47 +916,108 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPrec
           }
         : null;
 
+  const getQueueCreatedAtMs = (queuedAttendee) => {
+    const createdAtValue = queuedAttendee?.createdAt;
+    if (createdAtValue?.toMillis) {
+      return createdAtValue.toMillis();
+    }
+
+    const numericCreatedAt = Number(createdAtValue);
+    return Number.isFinite(numericCreatedAt) ? numericCreatedAt : 0;
+  };
+
+  const sortedQueueEntries = (preclaims || [])
+    .slice()
+    .sort((leftPreclaim, rightPreclaim) => {
+      const leftIsMember = Boolean(leftPreclaim?.isMember);
+      const rightIsMember = Boolean(rightPreclaim?.isMember);
+
+      if (leftIsMember !== rightIsMember) {
+        return leftIsMember ? -1 : 1;
+      }
+
+      const createdAtDifference = getQueueCreatedAtMs(leftPreclaim) - getQueueCreatedAtMs(rightPreclaim);
+      if (createdAtDifference !== 0) {
+        return createdAtDifference;
+      }
+
+      return String(leftPreclaim?.preclaimId ?? "").localeCompare(String(rightPreclaim?.preclaimId ?? ""));
+    });
+
+  const usedClaimNumbers = new Set(
+    claims
+      .map((claim) => Number.parseInt(claim.number, 10))
+      .filter((claimNumber) => Number.isFinite(claimNumber) && claimNumber > 0),
+  );
+  const queueEntriesWithProjectedNumbers = [];
+  let nextProjectedNumber = 1;
+
+  const findNextProjectedNumber = () => {
+    while (usedClaimNumbers.has(nextProjectedNumber)) {
+      nextProjectedNumber += 1;
+    }
+
+    return nextProjectedNumber;
+  };
+
+  sortedQueueEntries.forEach((queuedAttendee) => {
+    const projectedNumber = findNextProjectedNumber();
+
+    queueEntriesWithProjectedNumbers.push({
+      ...queuedAttendee,
+      projectedNumber,
+    });
+
+    usedClaimNumbers.add(projectedNumber);
+    nextProjectedNumber = projectedNumber + 1;
+  });
+
   return (
     <div className={`entry-card compact-card roster-card${isGraphOpen ? " roster-card--with-graphs" : ""}`}>
-      <div className="roster-card-header">
-        <div className="roster-card-title-block">
-          <h2>Attendee List</h2>
-          <p className="roster-card-subtitle">
-            {claims.length} attendee{claims.length === 1 ? "" : "s"}
-          </p>
+      <div className="roster-card-sticky-top">
+        <div className="roster-card-header">
+          <div className="roster-card-title-block">
+            <h2>Attendee List</h2>
+            <p className="roster-card-subtitle">
+              {claims.length} attendee{claims.length === 1 ? "" : "s"}
+              {showPreclaimQueue ? ` • ${queueEntriesWithProjectedNumbers.length} queued` : ""}
+            </p>
+          </div>
+          <div className="queue-corner-actions queue-corner-actions--roster">
+            <button
+              className={`secondary-button queue-corner-button${isGraphOpen ? " queue-corner-button--active" : ""}`}
+              type="button"
+              onClick={onToggleGraph}
+              aria-label={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
+              title={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
+            >
+              <img
+                src={graphIcon}
+                alt=""
+                className="button-icon queue-corner-button-icon queue-corner-button-icon--graph"
+              />
+            </button>
+          </div>
         </div>
-        <div className="queue-corner-actions queue-corner-actions--roster">
-          <button
-            className={`secondary-button queue-corner-button${isGraphOpen ? " queue-corner-button--active" : ""}`}
-            type="button"
-            onClick={onToggleGraph}
-            aria-label={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
-            title={isGraphOpen ? "Hide attendee graphs" : "Show attendee graphs"}
-          >
-            <img
-              src={graphIcon}
-              alt=""
-              className="button-icon queue-corner-button-icon queue-corner-button-icon--graph"
-            />
-          </button>
-        </div>
+        {isGraphPanelMounted ? (
+          <AttendeeGraphsPanel
+            claims={claims}
+            joinedNote={joinedNote}
+            joinedTimestamps={joinedTimestamps}
+            isItemClaimsVisible={isItemClaimsVisible}
+            isNumberClaimsVisible={isNumberClaimsVisible}
+            onExpandItemClaims={() => setExpandedGraphTone("items")}
+            onExpandNumberClaims={() => setExpandedGraphTone("claims")}
+            onHideItemClaims={() => setIsItemClaimsVisible(false)}
+            onHideNumberClaims={() => setIsNumberClaimsVisible(false)}
+            onShowItemClaims={() => setIsItemClaimsVisible(true)}
+            onShowNumberClaims={() => setIsNumberClaimsVisible(true)}
+            panelClassName={isGraphOpen ? "roster-graphs-panel--open" : "roster-graphs-panel--closing"}
+          />
+        ) : null}
       </div>
-      {isGraphPanelMounted ? (
-        <AttendeeGraphsPanel
-          claims={claims}
-          isItemClaimsVisible={isItemClaimsVisible}
-          isNumberClaimsVisible={isNumberClaimsVisible}
-          onExpandItemClaims={() => setExpandedGraphTone("items")}
-          onExpandNumberClaims={() => setExpandedGraphTone("claims")}
-          onHideItemClaims={() => setIsItemClaimsVisible(false)}
-          onHideNumberClaims={() => setIsNumberClaimsVisible(false)}
-          onShowItemClaims={() => setIsItemClaimsVisible(true)}
-          onShowNumberClaims={() => setIsNumberClaimsVisible(true)}
-          panelClassName={isGraphOpen ? "roster-graphs-panel--open" : "roster-graphs-panel--closing"}
-        />
-      ) : null}
       {claims.length ? (
-        <div className="roster-list" role="list">
+        <div className="roster-list roster-list--attendees" role="list">
           {claims.map((claim) => {
             const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
@@ -895,58 +1065,114 @@ function FullRoster({ claims, isGraphOpen, onToggleGraph, preclaims, onFetchPrec
         <p>No attendees have claimed a number yet.</p>
       )}
       {showPreclaimQueue ? (
-        <div className="queue-backlog-panel">
-          <h3 className="queue-backlog-title">Preclaim Queue</h3>
-          <div className="queue-summary queue-summary--single" aria-label="Preclaim counts">
-            <div className="queue-summary-card queue-summary-card--alert">
-              <span>Queued</span>
-              <strong>{(preclaims || []).length} waiting</strong>
-            </div>
+        <div className="roster-queue-section">
+          <div className="roster-queue-header">
+            <h3 className="queue-backlog-title">Queue</h3>
+            <button
+              type="button"
+              className="secondary-button roster-inline-action"
+              onClick={() => {
+                if (!onRefreshAllPreclaimMembershipsAsStaff || isRefreshingAllPreclaims) return;
+                setIsRefreshingAllPreclaims(true);
+                void onRefreshAllPreclaimMembershipsAsStaff().finally(() => {
+                  setIsRefreshingAllPreclaims(false);
+                });
+              }}
+              disabled={
+                !queueEntriesWithProjectedNumbers.length ||
+                !onRefreshAllPreclaimMembershipsAsStaff ||
+                isRefreshingAllPreclaims
+              }
+              title="Refresh all queued memberships"
+              aria-label="Refresh all queued memberships"
+            >
+              {isRefreshingAllPreclaims ? "Refreshing..." : "Refresh All"}
+            </button>
           </div>
-          <section>
-            <h4>Members</h4>
-            { (preclaims || []).filter((p) => p.isMember).length === 0 ? (
-              <p>No members in queue.</p>
-            ) : (
-              <div className="roster-list">
-                { (preclaims || []).filter((p) => p.isMember).map((m) => (
-                  <div key={m.preclaimId} className="roster-row" role="listitem">
+          {queueEntriesWithProjectedNumbers.length ? (
+            <div className="roster-list roster-list--queue" role="list">
+              {queueEntriesWithProjectedNumbers.map((queuedAttendee, queueIndex) => {
+                const avatarLabel = queuedAttendee.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
+                const isRefreshingCurrentPreclaim = refreshingPreclaimIds.has(queuedAttendee.preclaimId);
+                return (
+                  <div key={queuedAttendee.preclaimId} className="roster-row" role="listitem">
                     <div className="roster-primary">
+                      <strong>#{queuedAttendee.projectedNumber}</strong>
                       <div className="roster-avatar" aria-hidden="true">
-                        {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="roster-avatar-image" /> : <span className="roster-avatar-fallback">{(m.displayName||'?').charAt(0).toUpperCase()}</span>}
+                        {queuedAttendee.avatarUrl ? (
+                          <img src={queuedAttendee.avatarUrl} alt="" className="roster-avatar-image" />
+                        ) : (
+                          <span className="roster-avatar-fallback">{avatarLabel}</span>
+                        )}
                       </div>
-                      <span>{m.displayName}</span>
+                      <span>{queuedAttendee.displayName || "Unknown attendee"}</span>
                     </div>
                     <div className="roster-meta">
-                      <button className="secondary-button" type="button" onClick={() => onAssignPreclaimAsStaff && onAssignPreclaimAsStaff(m.preclaimId)}>Assign Number</button>
+                      <span className="roster-badge roster-badge--waiting">Queue {queueIndex + 1}</span>
+                      <span
+                        className={`roster-badge ${queuedAttendee.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                      >
+                        {queuedAttendee.isMember ? "Member" : "Not Member"}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary-button roster-inline-action"
+                        onClick={() => {
+                          if (!onAssignPreclaimAsStaff) return;
+                          void onAssignPreclaimAsStaff(queuedAttendee.preclaimId);
+                        }}
+                        title={`Assign number ${queuedAttendee.projectedNumber}`}
+                        aria-label={`Assign number ${queuedAttendee.projectedNumber} to ${queuedAttendee.displayName || "attendee"}`}
+                      >
+                        Assign Early
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button roster-inline-action"
+                        onClick={() => {
+                          if (!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim) return;
+                          setRefreshingPreclaimIds((currentIds) => {
+                            const nextIds = new Set(currentIds);
+                            nextIds.add(queuedAttendee.preclaimId);
+                            return nextIds;
+                          });
+                          void onRefreshPreclaimMembershipAsStaff(queuedAttendee.preclaimId).finally(() => {
+                            setRefreshingPreclaimIds((currentIds) => {
+                              const nextIds = new Set(currentIds);
+                              nextIds.delete(queuedAttendee.preclaimId);
+                              return nextIds;
+                            });
+                          });
+                        }}
+                        disabled={!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim}
+                        title="Refresh membership"
+                        aria-label={`Refresh membership for ${queuedAttendee.displayName || "attendee"}`}
+                      >
+                        {isRefreshingCurrentPreclaim ? "..." : "Refresh"}
+                      </button>
+                      <button
+                        type="button"
+                        className="roster-remove-button"
+                        onClick={() => {
+                          if (!onRemovePreclaimAsStaff) return;
+                          const confirmMsg = `Remove ${queuedAttendee.displayName || "attendee"} from queue? This logs them out.`;
+                          if (window.confirm(confirmMsg)) {
+                            void onRemovePreclaimAsStaff(queuedAttendee.preclaimId);
+                          }
+                        }}
+                        title="Remove from queue"
+                        aria-label={`Remove ${queuedAttendee.displayName || "attendee"} from queue`}
+                      >
+                        ×
+                      </button>
                     </div>
                   </div>
-                )) }
-              </div>
-            ) }
-          </section>
-          <section style={{ marginTop: '0.75rem' }}>
-            <h4>Regulars</h4>
-            { (preclaims || []).filter((p) => !p.isMember).length === 0 ? (
-              <p>No regulars in queue.</p>
-            ) : (
-              <div className="roster-list">
-                { (preclaims || []).filter((p) => !p.isMember).map((m) => (
-                  <div key={m.preclaimId} className="roster-row" role="listitem">
-                    <div className="roster-primary">
-                      <div className="roster-avatar" aria-hidden="true">
-                        {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="roster-avatar-image" /> : <span className="roster-avatar-fallback">{(m.displayName||'?').charAt(0).toUpperCase()}</span>}
-                      </div>
-                      <span>{m.displayName}</span>
-                    </div>
-                    <div className="roster-meta">
-                      <button className="secondary-button" type="button" onClick={() => onAssignPreclaimAsStaff && onAssignPreclaimAsStaff(m.preclaimId)}>Assign Number</button>
-                    </div>
-                  </div>
-                )) }
-              </div>
-            ) }
-          </section>
+                );
+              })}
+            </div>
+          ) : (
+            <p>No attendees are currently queued.</p>
+          )}
         </div>
       ) : null}
       {expandedGraphConfig ? (
@@ -1013,13 +1239,16 @@ function ControlPage({
   controlForm,
   controlMessage,
   controlSaving,
+  currentTime,
   currentEventClaims,
   currentRound,
   
   isEventDetailsModalOpen,
   isEventLive,
+  isEventStarted,
   isLastGroup,
   liveState,
+  eventStartTimeMs,
   onActivateFinalCall,
   onAutoAdvanceActionChange,
   onAutoAdvanceBacklogLimitChange,
@@ -1034,8 +1263,10 @@ function ControlPage({
   onOpenEventDetails,
   onOpenScanner,
   preclaims,
-  onFetchPreclaims,
   onAssignPreclaimAsStaff,
+  onRefreshAllPreclaimMembershipsAsStaff,
+  onRefreshPreclaimMembershipAsStaff,
+  onRemovePreclaimAsStaff,
   onRemoveClaim,
   showPreclaimQueue,
   liveEvent,
@@ -1079,6 +1310,19 @@ function ControlPage({
   ).length;
   const currentRoundClaimedRatio =
     totalPeopleWithNumbers > 0 ? currentRoundClaimedCount / totalPeopleWithNumbers : 0;
+  const hasScheduledEventStart = Number.isFinite(eventStartTimeMs);
+  const eventCountdownMs = hasScheduledEventStart
+    ? Math.max(0, eventStartTimeMs - currentTime)
+    : 0;
+  const eventElapsedMs = hasScheduledEventStart
+    ? Math.max(0, currentTime - eventStartTimeMs)
+    : 0;
+  const eventTimerLabel = hasScheduledEventStart
+    ? (isEventStarted ? "Live For:" : "Starts In:")
+    : "Status:";
+  const eventTimerValue = hasScheduledEventStart
+    ? formatStatusDuration(isEventStarted ? eventElapsedMs : eventCountdownMs)
+    : (isEventStarted ? "Live" : "--:--");
   const autoAdvanceDetails = [];
 
   if (autoAdvanceEnabled && autoAdvanceThresholdPercent > 0) {
@@ -1212,6 +1456,10 @@ function ControlPage({
                   <strong>{liveState.round}</strong>
                 </div>
                 <div className="stat-card stat-card--compact">
+                  <span>{eventTimerLabel}</span>
+                  <strong>{eventTimerValue}</strong>
+                </div>
+                <div className="stat-card stat-card--compact">
                   <span>Attendees:</span>
                   <strong>{totalPeopleWithNumbers}</strong>
                 </div>
@@ -1237,205 +1485,209 @@ function ControlPage({
 
            
 
-            <div className="entry-card compact-card queue-card">
-              <div className="queue-corner-actions">
-                <button
-                  className={`secondary-button queue-corner-button${isAutoAdvanceSettingsOpen ? " queue-corner-button--active" : ""}`}
-                  type="button"
-                  onClick={() => setIsAutoAdvanceSettingsOpen((currentValue) => !currentValue)}
-                  aria-label="Auto-advance settings"
-                  title="Auto-advance settings"
-                >
-                  <img src={settingsIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--settings" />
-                </button>
-                <button
-                  className={`secondary-button queue-corner-button${autoAdvanceEnabled ? " queue-corner-button--active" : ""}`}
-                  type="button"
-                  onClick={onToggleAutoAdvance}
-                  aria-label={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
-                  title={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
-                >
-                  <img src={autoIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--auto" />
-                </button>
-              </div>
-              <h2 className="queue-title">
-                {!liveState.finalCall ? <img src={groupIcon} alt="" className="title-icon" /> : null}
-                <span>{queueTitle}</span>
-              </h2>
-              {!isAutoAdvanceSettingsMounted && activeQueueElapsedLabel ? (
-                <p className="queue-timer">Up for {activeQueueElapsedLabel}</p>
-              ) : null}
-              {isAutoAdvanceSettingsMounted ? (
-                <div className={`queue-auto-advance-panel${isAutoAdvanceSettingsOpen ? " queue-auto-advance-panel--open" : " queue-auto-advance-panel--closing"}`}>
-                  {activeQueueElapsedLabel ? (
-                    <p className="queue-timer queue-timer--panel">Up for {activeQueueElapsedLabel}</p>
-                  ) : null}
-                  <p className="queue-auto-advance-summary">{autoAdvanceLabel}</p>
-                  <div className="queue-auto-advance-settings-grid">
-                    <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
-                      <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
-                        <span className="queue-auto-advance-setting-title">Next Group</span>
-                        <input
-                          type="checkbox"
-                          checked={autoAdvanceNextGroup}
-                          onChange={(event) =>
-                            onAutoAdvanceActionChange("autoAdvanceNextGroup", event.target.checked)
-                          }
-                        />
-                      </label>
-                      <div className="queue-auto-advance-inline-control">
-                        <select
-                          value={String(autoAdvanceThresholdPercent || 100)}
-                          onChange={(event) => onAutoAdvanceThresholdChange(event.target.value)}
-                        >
-                          <option value="50">50%</option>
-                          <option value="60">60%</option>
-                          <option value="70">70%</option>
-                          <option value="80">80%</option>
-                          <option value="90">90%</option>
-                          <option value="100">100%</option>
-                        </select>
-                      </div>
-                      <span className="queue-auto-advance-setting-copy">
-                        After this claimed threshold is reached, move to the next normal group.
-                      </span>
-                    </div>
-                    {actionOptions.map((option) => (
-                      <label key={option.field} className="queue-auto-advance-setting-card">
-                        <span className="queue-auto-advance-setting-topline">
-                          <span className="queue-auto-advance-setting-title">{option.label}</span>
+            <div className={`entry-card compact-card queue-card${isAutoAdvanceSettingsMounted ? " queue-card--settings-open" : ""}`}>
+              <div className="queue-card-sticky-top">
+                <div className="queue-corner-actions">
+                  <button
+                    className={`secondary-button queue-corner-button${isAutoAdvanceSettingsOpen ? " queue-corner-button--active" : ""}`}
+                    type="button"
+                    onClick={() => setIsAutoAdvanceSettingsOpen((currentValue) => !currentValue)}
+                    aria-label="Auto-advance settings"
+                    title="Auto-advance settings"
+                  >
+                    <img src={settingsIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--settings" />
+                  </button>
+                  <button
+                    className={`secondary-button queue-corner-button${autoAdvanceEnabled ? " queue-corner-button--active" : ""}`}
+                    type="button"
+                    onClick={onToggleAutoAdvance}
+                    aria-label={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
+                    title={autoAdvanceEnabled ? "Disable auto-advance" : "Enable auto-advance"}
+                  >
+                    <img src={autoIcon} alt="" className="button-icon queue-corner-button-icon queue-corner-button-icon--auto" />
+                  </button>
+                </div>
+                <h2 className="queue-title">
+                  {!liveState.finalCall ? <img src={groupIcon} alt="" className="title-icon" /> : null}
+                  <span>{queueTitle}</span>
+                </h2>
+                {!isAutoAdvanceSettingsMounted && activeQueueElapsedLabel ? (
+                  <p className="queue-timer">Up for {activeQueueElapsedLabel}</p>
+                ) : null}
+                {isAutoAdvanceSettingsMounted ? (
+                  <div className={`queue-auto-advance-panel${isAutoAdvanceSettingsOpen ? " queue-auto-advance-panel--open" : " queue-auto-advance-panel--closing"}`}>
+                    {activeQueueElapsedLabel ? (
+                      <p className="queue-timer queue-timer--panel">Up for {activeQueueElapsedLabel}</p>
+                    ) : null}
+                    <p className="queue-auto-advance-summary">{autoAdvanceLabel}</p>
+                    <div className="queue-auto-advance-settings-grid">
+                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                        <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
+                          <span className="queue-auto-advance-setting-title">Next Group</span>
                           <input
                             type="checkbox"
-                            checked={option.checked}
+                            checked={autoAdvanceNextGroup}
                             onChange={(event) =>
-                              onAutoAdvanceActionChange(option.field, event.target.checked)
+                              onAutoAdvanceActionChange("autoAdvanceNextGroup", event.target.checked)
                             }
                           />
+                        </label>
+                        <div className="queue-auto-advance-inline-control">
+                          <select
+                            value={String(autoAdvanceThresholdPercent || 100)}
+                            onChange={(event) => onAutoAdvanceThresholdChange(event.target.value)}
+                          >
+                            <option value="50">50%</option>
+                            <option value="60">60%</option>
+                            <option value="70">70%</option>
+                            <option value="80">80%</option>
+                            <option value="90">90%</option>
+                            <option value="100">100%</option>
+                          </select>
+                        </div>
+                        <span className="queue-auto-advance-setting-copy">
+                          After this claimed threshold is reached, move to the next normal group.
                         </span>
-                        <span className="queue-auto-advance-setting-copy">{option.description}</span>
-                      </label>
-                    ))}
-                    <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
-                      <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
-                        <span className="queue-auto-advance-setting-title">Final Call Timer</span>
-                        <input
-                          type="checkbox"
-                          checked={autoAdvanceFinalCallTimerEnabled}
-                          onChange={(event) =>
-                            onAutoAdvanceActionChange(
-                              "autoAdvanceFinalCallTimerEnabled",
-                              event.target.checked,
-                            )
-                          }
-                          disabled={!autoAdvanceStartRound}
-                        />
-                      </label>
-                      <div className="queue-auto-advance-inline-control">
-                        <input
-                          type="number"
-                          min="1"
-                          max="240"
-                          step="1"
-                          value={autoAdvanceFinalCallTimerMinutes}
-                          onChange={(event) => onAutoAdvanceTimerMinutesChange(event.target.value)}
-                          disabled={!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled}
-                        />
-                        <span>min</span>
                       </div>
-                      <span className="queue-auto-advance-setting-copy">
-                        During final call, force next round after this timer even if threshold was not met.
-                      </span>
-                    </div>
-                    <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
-                      <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
-                        <span className="queue-auto-advance-setting-title">People Per Group</span>
-                      </label>
-                      <div className="queue-auto-advance-inline-control">
-                        <input
-                          type="number"
-                          min="1"
-                          max="500"
-                          step="1"
-                          value={groupSize}
-                          onChange={(event) => onGroupSizeChange(event.target.value)}
-                        />
-                        <span>people</span>
+                      {actionOptions.map((option) => (
+                        <label key={option.field} className="queue-auto-advance-setting-card">
+                          <span className="queue-auto-advance-setting-topline">
+                            <span className="queue-auto-advance-setting-title">{option.label}</span>
+                            <input
+                              type="checkbox"
+                              checked={option.checked}
+                              onChange={(event) =>
+                                onAutoAdvanceActionChange(option.field, event.target.checked)
+                              }
+                            />
+                          </span>
+                          <span className="queue-auto-advance-setting-copy">{option.description}</span>
+                        </label>
+                      ))}
+                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                        <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
+                          <span className="queue-auto-advance-setting-title">Final Call Timer</span>
+                          <input
+                            type="checkbox"
+                            checked={autoAdvanceFinalCallTimerEnabled}
+                            onChange={(event) =>
+                              onAutoAdvanceActionChange(
+                                "autoAdvanceFinalCallTimerEnabled",
+                                event.target.checked,
+                              )
+                            }
+                            disabled={!autoAdvanceStartRound}
+                          />
+                        </label>
+                        <div className="queue-auto-advance-inline-control">
+                          <input
+                            type="number"
+                            min="1"
+                            max="240"
+                            step="1"
+                            value={autoAdvanceFinalCallTimerMinutes}
+                            onChange={(event) => onAutoAdvanceTimerMinutesChange(event.target.value)}
+                            disabled={!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled}
+                          />
+                          <span>min</span>
+                        </div>
+                        <span className="queue-auto-advance-setting-copy">
+                          During final call, force next round after this timer even if threshold was not met.
+                        </span>
                       </div>
-                      <span className="queue-auto-advance-setting-copy">
-                        Sets how many attendees are included when the next group starts. Current groups stay unchanged.
-                      </span>
-                    </div>
-                    <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
-                      <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
-                        <span className="queue-auto-advance-setting-title">Backlog Limit</span>
-                        <input
-                          type="checkbox"
-                          checked={autoAdvanceBacklogLimitEnabled}
-                          onChange={(event) =>
-                            onAutoAdvanceActionChange(
-                              "autoAdvanceBacklogLimitEnabled",
-                              event.target.checked,
-                            )
-                          }
-                        />
-                      </label>
-                      <div className="queue-auto-advance-inline-control">
-                        <input
-                          type="number"
-                          min="0"
-                          max="500"
-                          step="1"
-                          value={autoAdvanceBacklogLimit}
-                          onChange={(event) => onAutoAdvanceBacklogLimitChange(event.target.value)}
-                          disabled={!autoAdvanceBacklogLimitEnabled}
-                        />
-                        <span>max waiting</span>
+                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                        <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
+                          <span className="queue-auto-advance-setting-title">People Per Group</span>
+                        </label>
+                        <div className="queue-auto-advance-inline-control">
+                          <input
+                            type="number"
+                            min="1"
+                            max="500"
+                            step="1"
+                            value={groupSize}
+                            onChange={(event) => onGroupSizeChange(event.target.value)}
+                          />
+                          <span>people</span>
+                        </div>
+                        <span className="queue-auto-advance-setting-copy">
+                          Sets how many attendees are included when the next group starts. Current groups stay unchanged.
+                        </span>
                       </div>
-                      <span className="queue-auto-advance-setting-copy">
-                        Pause auto-advance when too many earlier numbers are still waiting.
-                      </span>
+                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                        <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
+                          <span className="queue-auto-advance-setting-title">Backlog Limit</span>
+                          <input
+                            type="checkbox"
+                            checked={autoAdvanceBacklogLimitEnabled}
+                            onChange={(event) =>
+                              onAutoAdvanceActionChange(
+                                "autoAdvanceBacklogLimitEnabled",
+                                event.target.checked,
+                              )
+                            }
+                          />
+                        </label>
+                        <div className="queue-auto-advance-inline-control">
+                          <input
+                            type="number"
+                            min="0"
+                            max="500"
+                            step="1"
+                            value={autoAdvanceBacklogLimit}
+                            onChange={(event) => onAutoAdvanceBacklogLimitChange(event.target.value)}
+                            disabled={!autoAdvanceBacklogLimitEnabled}
+                          />
+                          <span>max waiting</span>
+                        </div>
+                        <span className="queue-auto-advance-setting-copy">
+                          Pause auto-advance when too many earlier numbers are still waiting.
+                        </span>
+                      </div>
                     </div>
                   </div>
+                ) : null}
+                <div className="queue-primary-action-wrap">
+                  <button
+                    className={`control-primary-action queue-primary-action${primaryQueueAction.isReady ? " ready-button" : ""}`}
+                    type="button"
+                    onClick={primaryQueueAction.onClick}
+                    disabled={primaryQueueAction.disabled}
+                  >
+                    {primaryQueueAction.label}
+                  </button>
                 </div>
-              ) : null}
-              <div className="queue-primary-action-wrap">
-                <button
-                  className={`control-primary-action queue-primary-action${primaryQueueAction.isReady ? " ready-button" : ""}`}
-                  type="button"
-                  onClick={primaryQueueAction.onClick}
-                  disabled={primaryQueueAction.disabled}
-                >
-                  {primaryQueueAction.label}
-                </button>
+                {queueDescription ? <p>{queueDescription}</p> : null}
               </div>
-              {queueDescription ? <p>{queueDescription}</p> : null}
-              {shouldShowInlineBacklog ? (
-                <BacklogList claims={backlogClaims} />
-              ) : (
-                <>
-                  <ClaimList
-                    claims={activeQueueClaims}
-                    currentRound={currentRound}
-                    emptyText={queueEmptyText}
-                    isFinalCall={liveState.finalCall}
-                    isLastGroup={isLastGroup}
-                  />
-                  {backlogClaims.length > 0 ? (
-                    <>
-                      <div className="queue-backlog-toggle-wrap">
-                        <button
-                          className="secondary-button queue-backlog-toggle"
-                          type="button"
-                          onClick={() => setIsBacklogOpen((currentValue) => !currentValue)}
-                        >
-                          {isBacklogOpen ? "Hide" : "Show"} Backlog ({backlogClaims.length})
-                        </button>
-                      </div>
-                      {isBacklogOpen ? <BacklogList claims={backlogClaims} /> : null}
-                    </>
-                  ) : null}
-                </>
-              )}
+              <div className="queue-card-body">
+                {shouldShowInlineBacklog ? (
+                  <BacklogList claims={backlogClaims} />
+                ) : (
+                  <>
+                    <ClaimList
+                      claims={activeQueueClaims}
+                      currentRound={currentRound}
+                      emptyText={queueEmptyText}
+                      isFinalCall={liveState.finalCall}
+                      isLastGroup={isLastGroup}
+                    />
+                    {backlogClaims.length > 0 ? (
+                      <>
+                        <div className="queue-backlog-toggle-wrap">
+                          <button
+                            className="secondary-button queue-backlog-toggle"
+                            type="button"
+                            onClick={() => setIsBacklogOpen((currentValue) => !currentValue)}
+                          >
+                            {isBacklogOpen ? "Hide" : "Show"} Backlog ({backlogClaims.length})
+                          </button>
+                        </div>
+                        {isBacklogOpen ? <BacklogList claims={backlogClaims} /> : null}
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
 
             <FullRoster
@@ -1443,8 +1695,10 @@ function ControlPage({
               isGraphOpen={isAttendeeGraphOpen}
               onToggleGraph={() => setIsAttendeeGraphOpen((currentValue) => !currentValue)}
               preclaims={preclaims}
-              onFetchPreclaims={onFetchPreclaims}
               onAssignPreclaimAsStaff={onAssignPreclaimAsStaff}
+              onRefreshAllPreclaimMembershipsAsStaff={onRefreshAllPreclaimMembershipsAsStaff}
+              onRefreshPreclaimMembershipAsStaff={onRefreshPreclaimMembershipAsStaff}
+              onRemovePreclaimAsStaff={onRemovePreclaimAsStaff}
               onRemoveClaim={onRemoveClaim}
               showPreclaimQueue={showPreclaimQueue}
             />

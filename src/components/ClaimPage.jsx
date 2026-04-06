@@ -8,6 +8,23 @@ import scanIcon from "../assets/scan.svg";
 import settingsIcon from "../assets/settings.svg";
 import { getEventTitleClassName } from "../titleFonts";
 
+function formatCountdownDuration(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+    return "0:00";
+  }
+
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function ClaimRulesModal({
   liveState,
   onAcknowledgeRules,
@@ -44,9 +61,13 @@ function ClaimResultCard({
   claimQrPayload,
   claimRecord,
   claimResult,
+  currentTime,
   currentRound,
+  eventStartTimeMs,
   hasClaimedCurrentRound,
+  isEventStarted,
   liveCallLabel,
+  liveState,
   notificationPermission,
   onOpenClaimRules,
   onOpenBookList,
@@ -106,18 +127,63 @@ function ClaimResultCard({
           Open Book Descriptions
         </button>
       </div>
-      {!isClaimActive ? (
-        <div className="claim-status-grid">
-          <div className="stat-card">
-            <span>Round</span>
-            <strong>{currentRound}</strong>
+      {!isClaimActive ? (() => {
+        const isFinalCall = Boolean(liveState?.finalCall);
+        const currentCallNumber = Number(liveState?.current ?? 0);
+        const isRoundStartingSoon = !isFinalCall && currentCallNumber === 0;
+        const hasEventStartTime = Number.isFinite(eventStartTimeMs);
+        const hasCurrentTime = Number.isFinite(currentTime);
+        const remainingUntilEventStartMs =
+          hasEventStartTime && hasCurrentTime
+            ? Math.max(0, eventStartTimeMs - currentTime)
+            : 0;
+        const shouldShowRoundOneCountdown =
+          isRoundStartingSoon &&
+          currentRound === 1 &&
+          !isEventStarted &&
+          hasEventStartTime &&
+          remainingUntilEventStartMs > 0;
+
+        if (isFinalCall) {
+          return (
+            <div className="claim-status-grid claim-status-grid--single">
+              <div className="stat-card claim-status-card">
+                <strong>Final Call</strong>
+              </div>
+            </div>
+          );
+        }
+
+        if (isRoundStartingSoon) {
+          return shouldShowRoundOneCountdown ? (
+            <div className="claim-status-grid claim-status-grid--single">
+              <div className="stat-card claim-status-card">
+                <span>Round 1 Starts In</span>
+                <strong>{formatCountdownDuration(remainingUntilEventStartMs)}</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="claim-status-grid claim-status-grid--single">
+              <div className="stat-card claim-status-card">
+                <strong>Round {currentRound} is Starting Soon</strong>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="claim-status-grid">
+            <div className="stat-card">
+              <span>Round</span>
+              <strong>{currentRound}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Currently</span>
+              <strong>{liveCallLabel}</strong>
+            </div>
           </div>
-          <div className="stat-card">
-            <span>Currently</span>
-            <strong>{liveCallLabel}</strong>
-          </div>
-        </div>
-      ) : null}
+        );
+      })() : null}
       <div className={`claim-qr-panel${isClaimActive ? " claim-qr-panel--active" : ""}`}>
         {claimRecord ? (
           showClaimQr ? null : hasClaimedCurrentRound ? (
@@ -152,16 +218,13 @@ function MemberClaimCard({
   isClaimWindowOpen,
   isEventStarted,
   isMember,
-  hasTrustedStaffAccess,
   liveEvent,
   liveState,
   loggedIn,
   memberEarlyAccessLabel,
   memberEarlyAccessTime,
   onManualClaim,
-  onRefreshMembership,
   onStartOAuthGrant,
-  membershipRefreshPrompt,
 }) {
   return (
     <div className="entry-card claim-modal-card">
@@ -220,21 +283,6 @@ function MemberClaimCard({
         <button type="button" onClick={onManualClaim}>
           Give Me a Number
         </button>
-      ) : null}
-      {loggedIn && !isCheckingAccess && !claimLoading && !authError && !isClaimWindowOpen && !hasTrustedStaffAccess ? (
-        <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={onRefreshMembership}>
-            Refresh membership
-          </button>
-          {membershipRefreshPrompt ? (
-            <div style={{ marginTop: 8 }} className="entry-message">
-              Refresh failed — please re-login with Discord to continue.
-              <div style={{ marginTop: 6 }}>
-                <button type="button" onClick={onStartOAuthGrant}>Re-login with Discord</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
       ) : null}
       {claimError ? <p className="entry-message">{claimError}</p> : null}
     </div>

@@ -14,7 +14,7 @@ function DisplayPage({
   if (!isEventLive) {
     return (
       <div className="display empty-state">
-        <h1>The event isn&apos;t open yet.</h1>
+        <h1>No event is currently live.</h1>
       </div>
     );
   }
@@ -102,7 +102,10 @@ function DisplayPage({
                 )}
               </div>
               <p className="display-feed-copy">
-                <strong>{feedItem.username}</strong> {feedItem.action}
+                <strong className={`display-feed-name${feedItem.isMember ? " display-feed-name--member rainbow-text" : ""}`}>
+                  {feedItem.username}
+                </strong>{" "}
+                {feedItem.action}
               </p>
             </div>
           ))}
