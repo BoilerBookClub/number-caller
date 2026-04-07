@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Caveat", cursive;
   line-height: 1.5;
   font-weight: 400;
 
@@ -22,6 +22,7 @@ a {
   font-weight: 500;
   color: #0a5bd8;
   text-decoration: inherit;
+  font-size: large;
 }
 a:hover {
   color: #0845a4;

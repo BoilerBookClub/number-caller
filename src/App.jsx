@@ -5,6 +5,7 @@ import ClaimPage from "./components/ClaimPage";
 import {
   ClaimAccessGatePage,
   ClosedEventPage,
+  ControlAccessDenied,
 } from "./components/EntryPages";
 import {
   buildClaimAccessCode,
@@ -45,8 +46,8 @@ import {
 import { DEFAULT_TITLE_FONT, normalizeTitleFont } from "./titleFonts";
 import useDiscordLogin from "./useDiscordLogin";
 import Spinner from "./components/Spinner";
+import ControlPage from "./components/ControlPage";
 
-const ControlPage = lazy(() => import("./components/ControlPage"));
 const DisplayPage = lazy(() => import("./components/DisplayPage"));
 
 const defaultQrUrl =
@@ -92,13 +93,13 @@ const normalizeMemberCheckInLeadMinutes = (value) => {
     return initialState.memberCheckInLeadMinutes;
   }
 
-  return parsedValue;
+  return Math.max(0, Math.min(60, parsedValue));
 };
 
 const normalizeAutoAdvanceThresholdPercent = (value) => {
   const parsedValue = Number.parseInt(value, 10);
 
-  if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 100) {
+  if (!Number.isFinite(parsedValue) || parsedValue < 10 || parsedValue > 100) {
     return initialState.autoAdvanceThresholdPercent;
   }
 
@@ -108,7 +109,7 @@ const normalizeAutoAdvanceThresholdPercent = (value) => {
 const normalizeAutoAdvanceTimerMinutes = (value) => {
   const parsedValue = Number.parseInt(value, 10);
 
-  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 240) {
+  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 10) {
     return initialState.autoAdvanceFinalCallTimerMinutes;
   }
 
@@ -118,7 +119,7 @@ const normalizeAutoAdvanceTimerMinutes = (value) => {
 const normalizeAutoAdvanceBacklogLimit = (value) => {
   const parsedValue = Number.parseInt(value, 10);
 
-  if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 500) {
+  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 20) {
     return initialState.autoAdvanceBacklogLimit;
   }
 
@@ -128,7 +129,7 @@ const normalizeAutoAdvanceBacklogLimit = (value) => {
 const normalizeGroupSize = (value) => {
   const parsedValue = Number.parseInt(value, 10);
 
-  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 500) {
+  if (!Number.isFinite(parsedValue) || parsedValue < 1 || parsedValue > 20) {
     return initialState.groupSize;
   }
 
@@ -829,24 +830,6 @@ function App() {
       getScreenUrl(nextMode),
     );
   }, []);
-
-  useEffect(() => {
-    // Only redirect away from the control page when we're not on the control
-    // route and access checking has finished AND the user is not logged in
-    // and does not have trusted staff access. This prevents redirecting
-    // logged-in staff off the control page on a refresh when they are
-    // not on the staff allowlist.
-    if (
-      mode !== "control" ||
-      isCheckingAccess ||
-      hasTrustedStaffAccess ||
-      loggedIn
-    ) {
-      return;
-    }
-
-    changeMode(null, { replace: true });
-  }, [changeMode, hasTrustedStaffAccess, isCheckingAccess, mode, loggedIn]);
 
   const openDisplayScreen = () => {
     window.open(displayUrl, "_blank", "noopener,noreferrer");
@@ -1590,9 +1573,6 @@ function App() {
 
   const handleStaffManualClaim = useCallback(async () => {
     if (!liveEvent.eventId || !loggedIn || !user) return;
-    const proceed = window.confirm("Give yourself a number now? This will assign you a number immediately.");
-
-    if (!proceed) return;
 
     setClaimLoading(true);
 
@@ -2340,6 +2320,10 @@ function App() {
       return "Member early check-in time must be 0 minutes or more.";
     }
 
+    if (parsedValue > 60) {
+      return "Member early check-in time cannot be more than 60 minutes.";
+    }
+
     return "";
   };
 
@@ -2432,14 +2416,6 @@ function App() {
   };
 
   const handleCloseEvent = async () => {
-    const shouldCloseEvent = window.confirm(
-      "End this event? This will stop the live event for everyone.",
-    );
-
-    if (!shouldCloseEvent) {
-      return;
-    }
-
     setControlSaving(true);
 
     try {
@@ -2501,11 +2477,14 @@ function App() {
 
     if (!hasTrustedStaffAccess) {
       return (
-        <div className="mode-select">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Spinner size={56} />
-          </div>
-        </div>
+        <ControlAccessDenied
+          authError={authError}
+          handleLogout={handleLogout}
+          hasFullAccess={hasFullAccess}
+          isCheckingAccess={isCheckingAccess}
+          loggedIn={loggedIn}
+          onStartOAuthGrant={() => startOAuthGrant("/control")}
+        />
       );
     }
 
@@ -2605,16 +2584,9 @@ function App() {
   if (!claimAccessGranted && !effectiveClaimResult && !hasManualStaffClaimAccess) {
     return (
       <ClaimAccessGatePage
-        authError={authError}
         claimAccessStatus={claimAccessStatus}
-        handleLogout={handleLogout}
-        hasFullAccess={hasFullAccess}
-        isCheckingAccess={isCheckingAccess}
         liveEvent={liveEvent}
         liveState={liveState}
-        loggedIn={loggedIn}
-        onOpenControl={() => changeMode("control")}
-        onStartOAuthGrant={() => startOAuthGrant()}
       />
     );
   }

@@ -1,6 +1,7 @@
 import QRCode from "react-qr-code";
 import bbcLogo from "../assets/bbc_logo.png";
 import { getEventTitleClassName } from "../titleFonts";
+import { SketchCard, SketchProgress } from "./SketchUI";
 
 function DisplayPage({
   displayFeedItems,
@@ -67,24 +68,32 @@ function DisplayPage({
 
       {rotatingClaimAccessUrl ? (
         <div className="display-claim-qr-row">
-          <div className="rules-qr-container">
-            <div className="qr-claim-copy">
-              <h2 className="qr-caption">Scan to Claim Your Number</h2>
-              <p className="qr-helper-text">This attendee QR refreshes every minute.</p>
-              <div className="qr-refresh-status" aria-live="polite">
-                <p className="qr-refresh-label">{countdownLabel}</p>
-                <div className="qr-refresh-track" aria-hidden="true">
-                  <div
-                    className="qr-refresh-fill"
-                    style={{ width: `${Math.max(0, Math.min(1, qrRotationProgress)) * 100}%` }}
+          <SketchCard
+            className="rules-qr-container sketch-entry-card"
+            elevation={1}
+            fill="#ffffff"
+            strokeColor="#111111"
+          >
+            <div className="rules-qr-layout">
+              <div className="qr-claim-copy">
+                <h2 className="qr-caption">Scan to Claim Your Number</h2>
+                <p className="qr-helper-text">This attendee QR refreshes every minute.</p>
+                <div className="qr-refresh-status" aria-live="polite">
+                  <p className="qr-refresh-label">{countdownLabel}</p>
+                  <SketchProgress
+                    className="qr-refresh-track"
+                    value={Math.max(0, Math.min(1, qrRotationProgress)) * 100}
+                    min={0}
+                    max={100}
+                    aria-hidden="true"
                   />
                 </div>
               </div>
+              <div className="qr-code qr-code--claim">
+                <QRCode value={rotatingClaimAccessUrl} size={160} />
+              </div>
             </div>
-            <div className="qr-code qr-code--claim">
-              <QRCode value={rotatingClaimAccessUrl} size={160} />
-            </div>
-          </div>
+          </SketchCard>
         </div>
       ) : null}
 

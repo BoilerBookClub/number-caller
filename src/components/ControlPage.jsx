@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChartColumnIncreasing,
   Expand,
@@ -9,6 +9,17 @@ import {
   SquarePen,
   Users,
 } from "lucide-react";
+import {
+  SketchButton,
+  SketchCard,
+  SketchDialog,
+  SketchCombo,
+  SketchIconButton,
+  SketchInput,
+  SketchProgress,
+  SketchSlider,
+  SketchToggle,
+} from "./SketchUI";
 import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
 
 const AUTO_SETTINGS_ANIMATION_MS = 180;
@@ -265,19 +276,33 @@ function EventDetailsModal({
   onFieldChange,
   onSubmit,
 }) {
+  const parsedMemberCheckInLeadMinutes = Number.parseInt(controlForm.memberCheckInLeadMinutes, 10);
+  const memberCheckInLeadMinutes = Number.isFinite(parsedMemberCheckInLeadMinutes)
+    ? Math.max(0, Math.min(60, parsedMemberCheckInLeadMinutes))
+    : 15;
+  const memberCheckInLabel = `${memberCheckInLeadMinutes} minute${memberCheckInLeadMinutes === 1 ? "" : "s"}`;
+
   return (
-    <div className="event-modal-backdrop" role="presentation">
-      <div className="event-modal" role="dialog" aria-modal="true" aria-label="Event details">
+    <SketchDialog
+      className="event-details-dialog"
+      open
+      onClose={isEventLive ? onClose : undefined}
+      elevation={2}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Event details"
+    >
+      <div className="event-modal">
         {isEventLive ? (
           <div className="event-modal-header">
-            <button
+            <SketchIconButton
               type="button"
               className="event-modal-close"
               onClick={onClose}
               aria-label="Close event details"
             >
               ×
-            </button>
+            </SketchIconButton>
           </div>
         ) : null}
         <div className="event-modal-content">
@@ -286,7 +311,7 @@ function EventDetailsModal({
             <div className="title-grid">
               <label className="control-input-group control-input-group--centered">
                 <span>Event Title</span>
-                <input
+                <SketchInput
                   type="text"
                   value={controlForm.title}
                   onChange={onFieldChange("title")}
@@ -296,18 +321,22 @@ function EventDetailsModal({
               </label>
               <label className="control-input-group control-input-group--centered control-input-group--compact title-font-select">
                 <span>Event Title Font</span>
-                <select value={controlForm.titleFont} onChange={onFieldChange("titleFont")}>
+                <SketchCombo
+                  className="title-font-combo"
+                  selected={controlForm.titleFont}
+                  onChange={onFieldChange("titleFont")}
+                >
                   {TITLE_FONT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <wired-item key={option.value} value={option.value}>
                       {option.label}
-                    </option>
+                    </wired-item>
                   ))}
-                </select>
+                </SketchCombo>
               </label>
             </div>
             <label className="control-input-group control-input-group--centered">
               <span>Book List URL</span>
-              <input
+              <SketchInput
                 type="url"
                 value={controlForm.qrUrl}
                 onChange={onFieldChange("qrUrl")}
@@ -317,7 +346,7 @@ function EventDetailsModal({
             <div className="time-grid time-grid--centered">
               <label className="control-input-group control-input-group--centered control-input-group--time">
                 <span>Start Time</span>
-                <input
+                <SketchInput
                   type="time"
                   value={controlForm.timeframeStart}
                   onChange={onFieldChange("timeframeStart")}
@@ -325,7 +354,7 @@ function EventDetailsModal({
               </label>
               <label className="control-input-group control-input-group--centered control-input-group--time">
                 <span>End Time</span>
-                <input
+                <SketchInput
                   type="time"
                   value={controlForm.timeframeEnd}
                   onChange={onFieldChange("timeframeEnd")}
@@ -334,32 +363,35 @@ function EventDetailsModal({
             </div>
             <label className="control-input-group control-input-group--centered control-input-group--compact">
               <span>Member Early Check-In</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={controlForm.memberCheckInLeadMinutes}
-                onChange={onFieldChange("memberCheckInLeadMinutes")}
-                placeholder="15"
-              />
+              <div className="queue-auto-advance-inline-control event-member-checkin-inline-control">
+                <SketchSlider
+                  className="queue-auto-advance-slider event-member-checkin-slider"
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={memberCheckInLeadMinutes}
+                  onChange={onFieldChange("memberCheckInLeadMinutes")}
+                />
+                <span>{memberCheckInLeadMinutes} min</span>
+              </div>
               <small className="control-input-hint">
-                Minutes before the event start that members can claim a number.
+                {memberCheckInLabel} before event start.
               </small>
             </label>
             {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
             <div className="control-actions">
-              <button type="submit" disabled={controlSaving}>
+              <SketchButton type="submit" disabled={controlSaving}>
                 {controlSaving
                   ? "Saving..."
                   : isEventLive
                     ? "Save Event Details"
                     : "Start Event"}
-              </button>
+              </SketchButton>
             </div>
           </form>
         </div>
       </div>
-    </div>
+    </SketchDialog>
   );
 }
 
@@ -394,12 +426,13 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
               <span>{item.label}</span>
               <strong>{item.value}</strong>
               {item.label === "Claimed" ? (
-                <div className="queue-summary-progress" aria-hidden="true">
-                  <div
-                    className="queue-summary-progress-fill"
-                    style={{ width: `${Math.max(0, Math.min(1, claimedProgress)) * 100}%` }}
-                  />
-                </div>
+                <SketchProgress
+                  className="queue-summary-progress"
+                  value={Math.max(0, Math.min(1, claimedProgress)) * 100}
+                  min={0}
+                  max={100}
+                  aria-hidden="true"
+                />
               ) : null}
             </div>
           ) : null,
@@ -513,16 +546,19 @@ function GraphModalOverlay({ children, onClose, title }) {
 
   return (
     <div className="graph-expand-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="graph-expand-modal"
+      <SketchCard
+        className="graph-expand-modal sketch-modal-card"
         role="dialog"
         aria-modal="true"
         aria-label={`${title} expanded view`}
+        elevation={1}
+        fill="#ffffff"
+        strokeColor="#111111"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="graph-expand-modal-header">
           <h2>{title}</h2>
-          <button
+          <SketchIconButton
             type="button"
             className="timeline-chart-close timeline-chart-close--modal"
             onClick={onClose}
@@ -530,10 +566,10 @@ function GraphModalOverlay({ children, onClose, title }) {
             title={`Close expanded ${title.toLowerCase()}`}
           >
             <span className="timeline-chart-close-glyph" aria-hidden="true">×</span>
-          </button>
+          </SketchIconButton>
         </div>
         <div className="graph-expand-modal-body">{children}</div>
-      </div>
+      </SketchCard>
     </div>
   );
 }
@@ -569,16 +605,20 @@ function TimelineChart({
         };
 
   return (
-    <section
-      className={`timeline-chart-card${isExpanded ? " timeline-chart-card--expanded" : ""}`}
+    <SketchCard
+      className={`timeline-chart-card sketch-entry-card${isExpanded ? " timeline-chart-card--expanded" : ""}`}
       aria-label={title}
+      role="region"
+      elevation={1}
+      fill="#ffffff"
+      strokeColor="#111111"
     >
       <div className="timeline-chart-header">
         {!isExpanded ? (
           <div className="timeline-chart-title-row">
             <h3>{title}</h3>
             <div className="timeline-chart-actions">
-              <button
+              <SketchIconButton
                 type="button"
                 className="timeline-chart-expand"
                 onClick={onExpand}
@@ -589,9 +629,9 @@ function TimelineChart({
                   aria-hidden="true"
                   className="timeline-chart-expand-icon icon-animated icon-animate-pulse"
                 />
-              </button>
+              </SketchIconButton>
               {showCloseButton ? (
-                <button
+                <SketchIconButton
                   type="button"
                   className="timeline-chart-close"
                   onClick={onClose}
@@ -599,7 +639,7 @@ function TimelineChart({
                   title={`Hide ${title.toLowerCase()}`}
                 >
                   <span className="timeline-chart-close-glyph" aria-hidden="true">×</span>
-                </button>
+                </SketchIconButton>
               ) : null}
             </div>
           </div>
@@ -620,7 +660,12 @@ function TimelineChart({
         </div>
       </div>
       {timeline.sortedTimestamps.length ? (
-        <div className="graph-chart-shell">
+        <SketchCard
+          className="graph-chart-shell sketch-entry-card"
+          elevation={1}
+          fill="#ffffff"
+          strokeColor="#111111"
+        >
           <svg
             viewBox={`0 0 ${GRAPH_CHART_WIDTH} ${GRAPH_CHART_HEIGHT}`}
             className="graph-chart"
@@ -691,14 +736,14 @@ function TimelineChart({
               </text>
             ))}
           </svg>
-        </div>
+        </SketchCard>
       ) : (
         <div className="graph-empty-state">
           <strong>{emptyText}</strong>
         </div>
       )}
       {note ? <p className="graph-inline-note">{note}</p> : null}
-    </section>
+    </SketchCard>
   );
 }
 
@@ -751,22 +796,22 @@ function AttendeeGraphsPanel({
       {!isNumberClaimsVisible || !isItemClaimsVisible ? (
         <div className="roster-graphs-toolbar">
           {!isNumberClaimsVisible ? (
-            <button
+            <SketchButton
               type="button"
               className="secondary-button roster-graphs-toolbar-button"
               onClick={onShowNumberClaims}
             >
               Show Joined
-            </button>
+            </SketchButton>
           ) : null}
           {!isItemClaimsVisible ? (
-            <button
+            <SketchButton
               type="button"
               className="secondary-button roster-graphs-toolbar-button"
               onClick={onShowItemClaims}
             >
               Show Item Claims
-            </button>
+            </SketchButton>
           ) : null}
         </div>
       ) : null}
@@ -804,6 +849,7 @@ function FullRoster({
   claims,
   isGraphOpen,
   onToggleGraph,
+  onRequestConfirmation,
   preclaims,
   onAssignPreclaimAsStaff,
   onMoveClaimBackToQueueAsStaff,
@@ -979,7 +1025,10 @@ function FullRoster({
   });
 
   return (
-    <div className={`entry-card compact-card roster-card${isGraphOpen ? " roster-card--with-graphs" : ""}`}>
+    <SketchCard
+      className={`entry-card compact-card roster-card sketch-entry-card${isGraphOpen ? " roster-card--with-graphs" : ""}`}
+      elevation={2}
+    >
       <div className="roster-card-sticky-top">
         <div className="roster-card-header">
           <div className="roster-card-title-block">
@@ -990,7 +1039,7 @@ function FullRoster({
             </p>
           </div>
           <div className="queue-corner-actions queue-corner-actions--roster">
-            <button
+            <SketchIconButton
               className={`secondary-button queue-corner-button${isGraphOpen ? " queue-corner-button--active" : ""}`}
               type="button"
               onClick={onToggleGraph}
@@ -1001,7 +1050,7 @@ function FullRoster({
                 aria-hidden="true"
                 className="button-icon queue-corner-button-icon queue-corner-button-icon--graph icon-animated icon-animate-rise"
               />
-            </button>
+            </SketchIconButton>
           </div>
         </div>
         {isGraphPanelMounted ? (
@@ -1047,38 +1096,60 @@ function FullRoster({
                     {claim.isMember ? "Member" : "Not Member"}
                   </span>
                   {showPreclaimQueue ? (
-                    <button
+                    <SketchButton
                       type="button"
                       className="secondary-button roster-inline-action"
                       onClick={() => {
                         if (!onMoveClaimBackToQueueAsStaff) return;
                         const confirmMsg = `Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue?`;
-                        if (window.confirm(confirmMsg)) {
-                          void onMoveClaimBackToQueueAsStaff(claim.claimId);
+                        const handleMoveToQueue = () => onMoveClaimBackToQueueAsStaff(claim.claimId);
+
+                        if (typeof onRequestConfirmation === "function") {
+                          onRequestConfirmation({
+                            confirmLabel: "Move to Queue",
+                            message: confirmMsg,
+                            onConfirm: handleMoveToQueue,
+                            title: "Move attendee back to queue?",
+                            tone: "default",
+                          });
+                          return;
                         }
+
+                        void handleMoveToQueue();
                       }}
                       disabled={!onMoveClaimBackToQueueAsStaff}
                       title="Move back to queue"
                       aria-label={`Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue`}
                     >
                       Queue
-                    </button>
+                    </SketchButton>
                   ) : null}
-                  <button
+                  <SketchIconButton
                     type="button"
                     className="roster-remove-button"
                     onClick={() => {
                       if (!onRemoveClaim) return;
                       const confirmMsg = `Remove ${claim.displayName || 'attendee'} (#${claim.number})?`;
-                      if (window.confirm(confirmMsg)) {
-                        void onRemoveClaim(claim.claimId);
+                      const handleRemoveClaim = () => onRemoveClaim(claim.claimId);
+
+                      if (typeof onRequestConfirmation === "function") {
+                        onRequestConfirmation({
+                          confirmLabel: "Remove",
+                          message: confirmMsg,
+                          onConfirm: handleRemoveClaim,
+                          title: "Remove attendee?",
+                          tone: "danger",
+                        });
+                        return;
                       }
+
+                      void handleRemoveClaim();
                     }}
                     title="Remove number"
                     aria-label={`Remove ${claim.displayName || 'attendee'} (#${claim.number})`}
                   >
                     ×
-                  </button>
+                  </SketchIconButton>
                 </div>
               </div>
             );
@@ -1091,7 +1162,7 @@ function FullRoster({
         <div className="roster-queue-section">
           <div className="roster-queue-header">
             <h3 className="queue-backlog-title">Queue</h3>
-            <button
+            <SketchButton
               type="button"
               className="secondary-button roster-inline-action"
               onClick={() => {
@@ -1110,7 +1181,7 @@ function FullRoster({
               aria-label="Refresh all queued memberships"
             >
               {isRefreshingAllPreclaims ? "Refreshing..." : "Refresh All"}
-            </button>
+            </SketchButton>
           </div>
           {queueEntriesWithProjectedNumbers.length ? (
             <div className="roster-list roster-list--queue" role="list">
@@ -1137,7 +1208,7 @@ function FullRoster({
                       >
                         {queuedAttendee.isMember ? "Member" : "Not Member"}
                       </span>
-                      <button
+                      <SketchButton
                         type="button"
                         className="secondary-button roster-inline-action"
                         onClick={() => {
@@ -1148,8 +1219,8 @@ function FullRoster({
                         aria-label={`Assign number ${queuedAttendee.projectedNumber} to ${queuedAttendee.displayName || "attendee"}`}
                       >
                         Assign Early
-                      </button>
-                      <button
+                      </SketchButton>
+                      <SketchButton
                         type="button"
                         className="secondary-button roster-inline-action"
                         onClick={() => {
@@ -1172,22 +1243,34 @@ function FullRoster({
                         aria-label={`Refresh membership for ${queuedAttendee.displayName || "attendee"}`}
                       >
                         {isRefreshingCurrentPreclaim ? "..." : "Refresh"}
-                      </button>
-                      <button
+                      </SketchButton>
+                      <SketchIconButton
                         type="button"
                         className="roster-remove-button"
                         onClick={() => {
                           if (!onRemovePreclaimAsStaff) return;
                           const confirmMsg = `Remove ${queuedAttendee.displayName || "attendee"} from queue? This logs them out.`;
-                          if (window.confirm(confirmMsg)) {
-                            void onRemovePreclaimAsStaff(queuedAttendee.preclaimId);
+                          const handleRemovePreclaim = () =>
+                            onRemovePreclaimAsStaff(queuedAttendee.preclaimId);
+
+                          if (typeof onRequestConfirmation === "function") {
+                            onRequestConfirmation({
+                              confirmLabel: "Remove",
+                              message: confirmMsg,
+                              onConfirm: handleRemovePreclaim,
+                              title: "Remove attendee from queue?",
+                              tone: "danger",
+                            });
+                            return;
                           }
+
+                          void handleRemovePreclaim();
                         }}
                         title="Remove from queue"
                         aria-label={`Remove ${queuedAttendee.displayName || "attendee"} from queue`}
                       >
                         ×
-                      </button>
+                      </SketchIconButton>
                     </div>
                   </div>
                 );
@@ -1212,35 +1295,42 @@ function FullRoster({
           />
         </GraphModalOverlay>
       ) : null}
-    </div>
+    </SketchCard>
   );
 }
 
 function ScannerModal({ onClose, scanFeedback, scanLoading, scannerVideoRef }) {
   return (
     <div className="scanner-modal" role="dialog" aria-modal="true" aria-label="Claim scanner">
-      <div className="scanner-modal-header">
-        <button
-          type="button"
-          className="scanner-close-button"
-          onClick={onClose}
-          aria-label="Close scanner"
-        >
-          ×
-        </button>
-      </div>
-      <div className="scanner-modal-body">
-        <video ref={scannerVideoRef} className="scanner-video scanner-video--modal" muted playsInline />
-      </div>
-      <div className="scanner-modal-footer">
-        <p>Point the camera at an attendee&apos;s QR code.</p>
-      </div>
-      {scanLoading ? <div className="scanner-toast scanner-toast--loading">Processing scan...</div> : null}
-      {scanFeedback ? (
-        <div className={`scanner-toast scanner-toast--${scanFeedback.tone}`}>
-          {scanFeedback.message}
+      <SketchCard
+        className="scanner-modal-card sketch-modal-card"
+        elevation={2}
+        fill="#ffffff"
+        strokeColor="#111111"
+      >
+        <div className="scanner-modal-header">
+          <SketchIconButton
+            type="button"
+            className="scanner-close-button"
+            onClick={onClose}
+            aria-label="Close scanner"
+          >
+            ×
+          </SketchIconButton>
         </div>
-      ) : null}
+        <div className="scanner-modal-body">
+          <video ref={scannerVideoRef} className="scanner-video scanner-video--modal" muted playsInline />
+        </div>
+        <div className="scanner-modal-footer">
+          <p>Point the camera at an attendee&apos;s QR code.</p>
+        </div>
+        {scanLoading ? <div className="scanner-toast scanner-toast--loading">Processing scan...</div> : null}
+        {scanFeedback ? (
+          <div className={`scanner-toast scanner-toast--${scanFeedback.tone}`}>
+            {scanFeedback.message}
+          </div>
+        ) : null}
+      </SketchCard>
     </div>
   );
 }
@@ -1313,6 +1403,14 @@ function ControlPage({
   const [isAutoAdvanceSettingsMounted, setIsAutoAdvanceSettingsMounted] = useState(false);
   const [isAttendeeGraphOpen, setIsAttendeeGraphOpen] = useState(false);
   const [isBacklogOpen, setIsBacklogOpen] = useState(false);
+  const confirmActionRef = useRef(null);
+  const [confirmDialogState, setConfirmDialogState] = useState({
+    confirmLabel: "Confirm",
+    message: "",
+    open: false,
+    title: "Confirm action",
+    tone: "danger",
+  });
   const queueEmptyText = liveState.finalCall
     ? "Everyone from the final-call list has claimed an item."
     : liveState.current === 0
@@ -1329,6 +1427,8 @@ function ControlPage({
     liveState.finalCall &&
     (activeQueueClaims.length === 0 ||
       activeQueueClaims.every((claim) => claim.redeemedRound === currentRound));
+  const isFinalCallTimerLocked = !autoAdvanceStartRound;
+  const finalCallTimerLockHint = "Turn on Next Round first to edit this timer.";
   const currentRoundClaimedCount = currentEventClaims.filter(
     (claim) => claim.redeemedRound === currentRound,
   ).length;
@@ -1408,6 +1508,45 @@ function ControlPage({
         onClick: onNewRound,
       };
 
+  const closeConfirmDialog = () => {
+    confirmActionRef.current = null;
+    setConfirmDialogState((currentState) => ({
+      ...currentState,
+      open: false,
+    }));
+  };
+
+  const openConfirmDialog = ({
+    confirmLabel = "Confirm",
+    message = "",
+    onConfirm,
+    title = "Confirm action",
+    tone = "danger",
+  }) => {
+    confirmActionRef.current = typeof onConfirm === "function" ? onConfirm : null;
+    setConfirmDialogState({
+      confirmLabel,
+      message,
+      open: true,
+      title,
+      tone,
+    });
+  };
+
+  const handleConfirmDialogConfirm = () => {
+    const confirmAction = confirmActionRef.current;
+
+    closeConfirmDialog();
+
+    if (typeof confirmAction !== "function") {
+      return;
+    }
+
+    Promise.resolve(confirmAction()).catch((error) => {
+      console.error("Confirm dialog action failed", error);
+    });
+  };
+
   useEffect(() => {
     if (isAutoAdvanceSettingsOpen) {
       setIsAutoAdvanceSettingsMounted(true);
@@ -1453,7 +1592,7 @@ function ControlPage({
             <p className="control-event-subtitle">{liveEvent.timeframeLabel}</p>
               <h1 className={getEventTitleClassName(liveState.titleFont)}>{liveState.title}</h1>
               <div className="control-actions control-actions--header">
-                <button
+                <SketchIconButton
                   className="secondary-button icon-button control-side-action"
                   type="button"
                   onClick={onOpenEventDetails}
@@ -1461,58 +1600,70 @@ function ControlPage({
                   title="Edit event details"
                 >
                   <SquarePen aria-hidden="true" className="button-icon icon-animated icon-animate-wiggle" />
-                </button>
-                <button
+                </SketchIconButton>
+                <SketchButton
                   className="danger-button control-side-action control-side-action--text"
                   type="button"
-                  onClick={onCloseEvent}
+                  onClick={() =>
+                    openConfirmDialog({
+                      confirmLabel: "End Event",
+                      message: "This will stop the live event for everyone.",
+                      onConfirm: onCloseEvent,
+                      title: "End this event?",
+                      tone: "danger",
+                    })
+                  }
                   disabled={controlSaving}
                 >
                   End Event
-                </button>
+                </SketchButton>
               </div>
             </div>
 
             <div className="stats-grid">
               <div className="stats-stack">
-                <div className="stat-card stat-card--compact">
+                <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
                   <span>Round:</span>
                   <strong>{liveState.round}</strong>
-                </div>
-                <div className="stat-card stat-card--compact">
+                </SketchCard>
+                <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
                   <span>{eventTimerLabel}</span>
                   <strong>{eventTimerValue}</strong>
-                </div>
-                <div className="stat-card stat-card--compact">
+                </SketchCard>
+                <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
                   <span>Attendees:</span>
                   <strong>{totalPeopleWithNumbers}</strong>
-                </div>
+                </SketchCard>
               </div>
-              <div className="stat-card stat-card--progress">
+              <SketchCard className="stat-card stat-card--progress sketch-entry-card" elevation={1}>
                 <span>Round Progress</span>
                 <strong>{currentRoundClaimedCount}/{totalPeopleWithNumbers}</strong>
-                <div className="stat-progress" aria-hidden="true">
-                  <div
-                    className="stat-progress-fill"
-                    style={{ width: `${Math.max(0, Math.min(1, currentRoundClaimedRatio)) * 100}%` }}
-                  />
-                </div>
+                <SketchProgress
+                  className="stat-progress"
+                  value={Math.max(0, Math.min(1, currentRoundClaimedRatio)) * 100}
+                  min={0}
+                  max={100}
+                  aria-hidden="true"
+                />
                 <small className="stat-progress-copy">
                   {totalPeopleWithNumbers > 0
                     ? `${Math.round(currentRoundClaimedRatio * 100)}% of attendees claimed an item`
                     : "No attendees yet"}
                 </small>
-              </div>
+              </SketchCard>
             </div>
 
             {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
 
            
 
-            <div className={`entry-card compact-card queue-card${isAutoAdvanceSettingsMounted ? " queue-card--settings-open" : ""}`}>
+            <SketchCard
+              className={`entry-card compact-card queue-card sketch-entry-card${isAutoAdvanceSettingsMounted ? " queue-card--settings-open" : ""}`}
+              elevation={2}
+            >
               <div className="queue-card-sticky-top">
                 <div className="queue-corner-actions">
-                  <button
+                  <SketchIconButton
                     className={`secondary-button queue-corner-button${isAutoAdvanceSettingsOpen ? " queue-corner-button--active" : ""}`}
                     type="button"
                     onClick={() => setIsAutoAdvanceSettingsOpen((currentValue) => !currentValue)}
@@ -1523,8 +1674,8 @@ function ControlPage({
                       aria-hidden="true"
                       className="button-icon queue-corner-button-icon queue-corner-button-icon--settings icon-animated icon-animate-spin-slow"
                     />
-                  </button>
-                  <button
+                  </SketchIconButton>
+                  <SketchIconButton
                     className={`secondary-button queue-corner-button${autoAdvanceEnabled ? " queue-corner-button--active" : ""}`}
                     type="button"
                     onClick={onToggleAutoAdvance}
@@ -1535,7 +1686,7 @@ function ControlPage({
                       aria-hidden="true"
                       className="button-icon queue-corner-button-icon queue-corner-button-icon--auto icon-animated icon-animate-shift"
                     />
-                  </button>
+                  </SketchIconButton>
                 </div>
                 <h2 className="queue-title">
                   {!liveState.finalCall ? (
@@ -1547,17 +1698,25 @@ function ControlPage({
                   <p className="queue-timer">Up for {activeQueueElapsedLabel}</p>
                 ) : null}
                 {isAutoAdvanceSettingsMounted ? (
-                  <div className={`queue-auto-advance-panel${isAutoAdvanceSettingsOpen ? " queue-auto-advance-panel--open" : " queue-auto-advance-panel--closing"}`}>
+                  <SketchCard
+                    className={`queue-auto-advance-panel sketch-entry-card${isAutoAdvanceSettingsOpen ? " queue-auto-advance-panel--open" : " queue-auto-advance-panel--closing"}`}
+                    elevation={1}
+                  >
                     {activeQueueElapsedLabel ? (
                       <p className="queue-timer queue-timer--panel">Up for {activeQueueElapsedLabel}</p>
                     ) : null}
                     <p className="queue-auto-advance-summary">{autoAdvanceLabel}</p>
                     <div className="queue-auto-advance-settings-grid">
-                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                      <SketchCard
+                        className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline sketch-entry-card"
+                        elevation={1}
+                        fill="#ffffff"
+                        strokeColor="#111111"
+                      >
                         <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
                           <span className="queue-auto-advance-setting-title">Next Group</span>
-                          <input
-                            type="checkbox"
+                          <SketchToggle
+                            className="queue-auto-advance-toggle"
                             checked={autoAdvanceNextGroup}
                             onChange={(event) =>
                               onAutoAdvanceActionChange("autoAdvanceNextGroup", event.target.checked)
@@ -1565,92 +1724,132 @@ function ControlPage({
                           />
                         </label>
                         <div className="queue-auto-advance-inline-control">
-                          <select
-                            value={String(autoAdvanceThresholdPercent || 100)}
-                            onChange={(event) => onAutoAdvanceThresholdChange(event.target.value)}
-                          >
-                            <option value="50">50%</option>
-                            <option value="60">60%</option>
-                            <option value="70">70%</option>
-                            <option value="80">80%</option>
-                            <option value="90">90%</option>
-                            <option value="100">100%</option>
-                          </select>
+                          <SketchSlider
+                            className={`queue-auto-advance-slider${!autoAdvanceNextGroup ? " queue-auto-advance-slider--inactive" : ""}`}
+                            min={10}
+                            max={100}
+                            step={1}
+                            value={autoAdvanceThresholdPercent}
+                            onChange={(event) => {
+                              if (!autoAdvanceNextGroup) {
+                                return;
+                              }
+
+                              onAutoAdvanceThresholdChange(event.target.value);
+                            }}
+                            aria-disabled={!autoAdvanceNextGroup}
+                          />
+                          <span>{autoAdvanceThresholdPercent}%</span>
                         </div>
                         <span className="queue-auto-advance-setting-copy">
                           After this claimed threshold is reached, move to the next normal group.
                         </span>
-                      </div>
+                      </SketchCard>
                       {actionOptions.map((option) => (
-                        <label key={option.field} className="queue-auto-advance-setting-card">
-                          <span className="queue-auto-advance-setting-topline">
+                        <SketchCard
+                          key={option.field}
+                          className="queue-auto-advance-setting-card sketch-entry-card"
+                          elevation={1}
+                          fill="#ffffff"
+                          strokeColor="#111111"
+                        >
+                          <label className="queue-auto-advance-setting-topline">
                             <span className="queue-auto-advance-setting-title">{option.label}</span>
-                            <input
-                              type="checkbox"
+                            <SketchToggle
+                              className="queue-auto-advance-toggle"
                               checked={option.checked}
                               onChange={(event) =>
                                 onAutoAdvanceActionChange(option.field, event.target.checked)
                               }
                             />
-                          </span>
+                          </label>
                           <span className="queue-auto-advance-setting-copy">{option.description}</span>
-                        </label>
+                        </SketchCard>
                       ))}
-                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                      <SketchCard
+                        key={isFinalCallTimerLocked ? "final-call-timer-locked" : "final-call-timer-unlocked"}
+                        className={`queue-auto-advance-setting-card queue-auto-advance-setting-card--inline sketch-entry-card${isFinalCallTimerLocked ? " queue-auto-advance-setting-card--locked" : ""}`}
+                        elevation={1}
+                        fill={isFinalCallTimerLocked ? "#f2f2f2" : "#ffffff"}
+                        strokeColor="#111111"
+                        data-lock-hint={isFinalCallTimerLocked ? finalCallTimerLockHint : undefined}
+                      >
                         <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
                           <span className="queue-auto-advance-setting-title">Final Call Timer</span>
-                          <input
-                            type="checkbox"
+                          <SketchToggle
+                            key={isFinalCallTimerLocked ? "final-call-toggle-locked" : "final-call-toggle-unlocked"}
+                            className={`queue-auto-advance-toggle${isFinalCallTimerLocked ? " queue-auto-advance-toggle--dimmed queue-auto-advance-toggle--inactive" : ""}`}
                             checked={autoAdvanceFinalCallTimerEnabled}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              if (isFinalCallTimerLocked) {
+                                return;
+                              }
+
                               onAutoAdvanceActionChange(
                                 "autoAdvanceFinalCallTimerEnabled",
                                 event.target.checked,
-                              )
-                            }
-                            disabled={!autoAdvanceStartRound}
+                              );
+                            }}
+                            aria-disabled={isFinalCallTimerLocked}
                           />
                         </label>
                         <div className="queue-auto-advance-inline-control">
-                          <input
-                            type="number"
-                            min="1"
-                            max="240"
-                            step="1"
+                          <SketchSlider
+                            key={`${isFinalCallTimerLocked ? "locked" : "unlocked"}-${autoAdvanceFinalCallTimerEnabled ? "enabled" : "disabled"}`}
+                            className={`queue-auto-advance-slider${(!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled) ? " queue-auto-advance-slider--inactive" : ""}`}
+                            min={1}
+                            max={10}
+                            step={1}
                             value={autoAdvanceFinalCallTimerMinutes}
-                            onChange={(event) => onAutoAdvanceTimerMinutesChange(event.target.value)}
-                            disabled={!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled}
+                            onChange={(event) => {
+                              if (!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled) {
+                                return;
+                              }
+
+                              onAutoAdvanceTimerMinutesChange(event.target.value);
+                            }}
+                            aria-disabled={!autoAdvanceStartRound || !autoAdvanceFinalCallTimerEnabled}
                           />
                           <span>min</span>
                         </div>
                         <span className="queue-auto-advance-setting-copy">
                           During final call, force next round after this timer even if threshold was not met.
                         </span>
-                      </div>
-                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                      </SketchCard>
+                      <SketchCard
+                        className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline sketch-entry-card"
+                        elevation={1}
+                        fill="#ffffff"
+                        strokeColor="#111111"
+                      >
                         <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
                           <span className="queue-auto-advance-setting-title">People Per Group</span>
                         </label>
                         <div className="queue-auto-advance-inline-control">
-                          <input
-                            type="number"
-                            min="1"
-                            max="500"
-                            step="1"
+                          <SketchSlider
+                            className="queue-auto-advance-slider"
+                            min={1}
+                            max={20}
+                            step={1}
                             value={groupSize}
                             onChange={(event) => onGroupSizeChange(event.target.value)}
                           />
-                          <span>people</span>
+                          <span>{groupSize} {groupSize === 1 ? "person" : "people"}</span>
                         </div>
                         <span className="queue-auto-advance-setting-copy">
                           Sets how many attendees are included when the next group starts. Current groups stay unchanged.
                         </span>
-                      </div>
-                      <div className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline">
+                      </SketchCard>
+                      <SketchCard
+                        className="queue-auto-advance-setting-card queue-auto-advance-setting-card--inline sketch-entry-card"
+                        elevation={1}
+                        fill="#ffffff"
+                        strokeColor="#111111"
+                      >
                         <label className="queue-auto-advance-setting-topline queue-auto-advance-setting-topline--label">
                           <span className="queue-auto-advance-setting-title">Backlog Limit</span>
-                          <input
-                            type="checkbox"
+                          <SketchToggle
+                            className="queue-auto-advance-toggle"
                             checked={autoAdvanceBacklogLimitEnabled}
                             onChange={(event) =>
                               onAutoAdvanceActionChange(
@@ -1661,33 +1860,39 @@ function ControlPage({
                           />
                         </label>
                         <div className="queue-auto-advance-inline-control">
-                          <input
-                            type="number"
-                            min="0"
-                            max="500"
-                            step="1"
+                          <SketchSlider
+                            className={`queue-auto-advance-slider${!autoAdvanceBacklogLimitEnabled ? " queue-auto-advance-slider--inactive" : ""}`}
+                            min={1}
+                            max={20}
+                            step={1}
                             value={autoAdvanceBacklogLimit}
-                            onChange={(event) => onAutoAdvanceBacklogLimitChange(event.target.value)}
-                            disabled={!autoAdvanceBacklogLimitEnabled}
+                            onChange={(event) => {
+                              if (!autoAdvanceBacklogLimitEnabled) {
+                                return;
+                              }
+
+                              onAutoAdvanceBacklogLimitChange(event.target.value);
+                            }}
+                            aria-disabled={!autoAdvanceBacklogLimitEnabled}
                           />
                           <span>max waiting</span>
                         </div>
                         <span className="queue-auto-advance-setting-copy">
                           Pause auto-advance when too many earlier numbers are still waiting.
                         </span>
-                      </div>
+                      </SketchCard>
                     </div>
-                  </div>
+                  </SketchCard>
                 ) : null}
                 <div className="queue-primary-action-wrap">
-                  <button
+                  <SketchButton
                     className={`control-primary-action queue-primary-action${primaryQueueAction.isReady ? " ready-button" : ""}`}
                     type="button"
                     onClick={primaryQueueAction.onClick}
                     disabled={primaryQueueAction.disabled}
                   >
                     {primaryQueueAction.label}
-                  </button>
+                  </SketchButton>
                 </div>
                 {queueDescription ? <p>{queueDescription}</p> : null}
               </div>
@@ -1706,13 +1911,13 @@ function ControlPage({
                     {backlogClaims.length > 0 ? (
                       <>
                         <div className="queue-backlog-toggle-wrap">
-                          <button
+                          <SketchButton
                             className="secondary-button queue-backlog-toggle"
                             type="button"
                             onClick={() => setIsBacklogOpen((currentValue) => !currentValue)}
                           >
                             {isBacklogOpen ? "Hide" : "Show"} Backlog ({backlogClaims.length})
-                          </button>
+                          </SketchButton>
                         </div>
                         {isBacklogOpen ? <BacklogList claims={backlogClaims} /> : null}
                       </>
@@ -1720,12 +1925,13 @@ function ControlPage({
                   </>
                 )}
               </div>
-            </div>
+            </SketchCard>
 
             <FullRoster
               claims={currentEventClaims}
               isGraphOpen={isAttendeeGraphOpen}
               onToggleGraph={() => setIsAttendeeGraphOpen((currentValue) => !currentValue)}
+              onRequestConfirmation={openConfirmDialog}
               preclaims={preclaims}
               onAssignPreclaimAsStaff={onAssignPreclaimAsStaff}
               onMoveClaimBackToQueueAsStaff={onMoveClaimBackToQueueAsStaff}
@@ -1760,8 +1966,8 @@ function ControlPage({
       ) : null}
 
       {isEventLive ? (
-        <div className="bottom-navbar">
-          <button
+        <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
+          <SketchButton
             className="bottom-navbar-button"
             type="button"
             onClick={onOpenScanner}
@@ -1769,19 +1975,39 @@ function ControlPage({
           >
             <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
             <span>Open Scanner</span>
-          </button>
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+          </SketchButton>
+          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
             <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
             <span>Open Display</span>
-          </button>
-        </div>
+          </SketchButton>
+        </SketchCard>
       ) : (
-        <div className="bottom-navbar">
-          <button className="secondary-button bottom-navbar-button" onClick={onHandleLogout}>
+        <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
+          <SketchButton className="secondary-button bottom-navbar-button" onClick={onHandleLogout}>
             Logout
-          </button>
-        </div>
+          </SketchButton>
+        </SketchCard>
       )}
+      <SketchDialog className="sketch-confirm-dialog" open={confirmDialogState.open} onClose={closeConfirmDialog}>
+        <div className="confirm-dialog-content">
+          <h3 className="confirm-dialog-title">{confirmDialogState.title}</h3>
+          {confirmDialogState.message ? (
+            <p className="confirm-dialog-copy">{confirmDialogState.message}</p>
+          ) : null}
+          <div className="confirm-dialog-actions">
+            <SketchButton type="button" className="secondary-button" onClick={closeConfirmDialog}>
+              Cancel
+            </SketchButton>
+            <SketchButton
+              type="button"
+              className={confirmDialogState.tone === "danger" ? "danger-button" : ""}
+              onClick={handleConfirmDialogConfirm}
+            >
+              {confirmDialogState.confirmLabel}
+            </SketchButton>
+          </div>
+        </div>
+      </SketchDialog>
     </div>
   );
 }

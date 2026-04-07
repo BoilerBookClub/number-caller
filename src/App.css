@@ -4,9 +4,9 @@ button:focus, button:focus-visible, button:hover {
   border-color: #ffbe5c !important; /* warm yellow */
   box-shadow: 0 1.5px 8px 0 #ffe0ba33;
 }
-.secondary-button:focus, .secondary-button:focus-visible, .secondary-button:hover,
-.danger-button:focus, .danger-button:focus-visible, .danger-button:hover,
-.ready-button:focus, .ready-button:focus-visible, .ready-button:hover {
+button.secondary-button:focus, button.secondary-button:focus-visible, button.secondary-button:hover,
+button.danger-button:focus, button.danger-button:focus-visible, button.danger-button:hover,
+button.ready-button:focus, button.ready-button:focus-visible, button.ready-button:hover {
   outline: none !important;
   border-color: #ffbe5c !important;
   box-shadow: 0 1.5px 8px 0 #ffe0ba33;
@@ -27,6 +27,11 @@ button:focus, button:focus-visible, button:hover {
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+}
+
+p {
+  font-size: clamp(1.1rem, 1rem + 0.28vw, 1.3rem);
+  line-height: 1.45;
 }
 
 html.modal-scroll-locked,
@@ -135,6 +140,12 @@ body.modal-scroll-locked {
   margin-top: 1rem;
 }
 
+.entry-staff-action--stack {
+  flex-direction: column;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
 .inline-logo {
   display: block;
   object-fit: contain;
@@ -165,6 +176,30 @@ body.modal-scroll-locked {
   box-shadow: #3434341c 0 6px 20px;
 }
 
+.sketch-entry-card {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  --wired-card-background-fill: #111111;
+  --sketch-fill-color: #ffffff;
+}
+
+.sketch-modal-card {
+  --sketch-fill-color: rgb(225, 219, 203);
+}
+
+.sketch-navbar-card {
+  --sketch-fill-color: #ffffff;
+}
+
+.sketch-card {
+  display: flex !important;
+  flex-direction: column;
+  position: relative;
+  background-color: var(--sketch-fill-color, transparent);
+  background-image: none;
+}
+
 .entry-card-centered {
   width: fit-content;
 }
@@ -176,6 +211,16 @@ body.modal-scroll-locked {
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
+}
+
+.entry-card-centered-login .entry-heading-with-logo {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.entry-card-centered-login .entry-staff-action {
+  width: 100%;
 }
 
 .entry-screen {
@@ -231,14 +276,17 @@ body.modal-scroll-locked {
   right: 1rem;
 }
 
-.secondary-button.claim-corner-button--active {
+button.secondary-button.claim-corner-button--active,
+wired-button.secondary-button.claim-corner-button--active,
+wired-icon-button.secondary-button.claim-corner-button--active {
   background: #111111;
   border-color: #111111;
   color: #ffffff;
   box-shadow: none;
 }
 
-.secondary-button.claim-corner-button--active .button-icon {
+button.secondary-button.claim-corner-button--active .button-icon,
+wired-button.secondary-button.claim-corner-button--active .button-icon {
   filter: brightness(0) invert(1);
 }
 
@@ -309,29 +357,85 @@ body.modal-scroll-locked {
   margin: 0;
 }
 
-.claim-rules-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 990;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(12, 16, 20, 0.42);
-  backdrop-filter: blur(6px);
+.claim-card-actions wired-button {
+  margin: 0;
+}
+
+.claim-rules-dialog {
+  --wired-dialog-z-index: 990;
+  color: #111111;
 }
 
 .claim-rules-modal {
-  width: min(100%, 45rem);
-  border-radius: 28px;
-  background: #ffffff;
-  border: 1px solid #d7d7d7;
-  box-shadow: #1f1f1f33 0 20px 48px;
+  display: flex;
+  flex-direction: column;
+  width: calc(100vw - 10px);
+  height: calc(100dvh - 10px);
+  max-width: calc(100vw - 10px);
+  max-height: calc(100dvh - 10px);
+  border-radius: 0;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sketch-modal-card {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  color: #111111;
+  --wired-card-background-fill: #111111;
+  box-sizing: border-box;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+wired-card.sketch-entry-card,
+wired-card.sketch-modal-card {
+  --wired-card-background-fill: #111111;
+  box-sizing: border-box;
+  overflow-x: clip !important;
+  overflow-y: hidden !important;
+  overscroll-behavior-x: none;
+}
+
+wired-card.sketch-modal-card {
+  width: 100% !important;
+  min-width: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+}
+
+/* Let rough border strokes render fully for auto-advance cards (avoid clipped top edges). */
+wired-card.queue-auto-advance-panel.sketch-entry-card,
+wired-card.queue-auto-advance-setting-card.sketch-entry-card {
+  overflow: visible !important;
+}
+
+.claim-rules-modal.sketch-modal-card,
+.scanner-modal-card.sketch-modal-card,
+.graph-expand-modal.sketch-modal-card {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 .claim-rules-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 45rem;
+  margin: 0 auto;
   padding: 1.5rem;
   text-align: left;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .claim-rules-copy {
@@ -354,6 +458,10 @@ body.modal-scroll-locked {
 }
 
 .claim-rules-actions button {
+  margin: 0;
+}
+
+.claim-rules-actions wired-button {
   margin: 0;
 }
 
@@ -434,7 +542,6 @@ body.modal-scroll-locked {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: #ffffff;
   padding-top: 0.2rem;
 }
 
@@ -481,7 +588,10 @@ body.modal-scroll-locked {
   margin-left: auto;
   margin-right: auto;
   max-height: min(84vh, 52rem);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .queue-card--settings-open {
@@ -492,12 +602,15 @@ body.modal-scroll-locked {
   position: sticky;
   top: 0;
   z-index: 6;
-  background: #ffffff;
   padding-bottom: 0.5rem;
 }
 
 .queue-card-body {
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .control-event-header {
@@ -622,18 +735,11 @@ body.modal-scroll-locked {
 
 .queue-summary-progress {
   width: 100%;
-  height: 0.5rem;
   margin-top: 0.35rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #ece7dc;
-}
-
-.queue-summary-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #7b5200 0%, #d58f00 100%);
-  transition: width 180ms ease-out;
+  --wired-progress-color: rgba(123, 82, 0, 0.88);
+  --wired-progress-label-color: transparent;
+  --wired-progress-label-background: transparent;
+  --wired-progress-font-size: 0px;
 }
 
 .queue-summary-card--alert {
@@ -656,11 +762,7 @@ body.modal-scroll-locked {
 }
 
 .queue-summary-card--complete .queue-summary-progress {
-  background: #cfe9d6;
-}
-
-.queue-summary-card--complete .queue-summary-progress-fill {
-  background: linear-gradient(90deg, #186a3b 0%, #31a85a 100%);
+  --wired-progress-color: rgba(24, 106, 59, 0.9);
 }
 
 .queue-card {
@@ -716,17 +818,21 @@ body.modal-scroll-locked {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  overflow: hidden;
+  overflow: visible;
 }
 
-.secondary-button.queue-corner-button--active {
+button.secondary-button.queue-corner-button--active,
+wired-button.secondary-button.queue-corner-button--active,
+wired-icon-button.secondary-button.queue-corner-button--active {
   background: #111111;
   border-color: #111111;
   color: #ffffff;
   box-shadow: none;
 }
 
-.secondary-button.queue-corner-button--active .queue-corner-button-icon {
+button.secondary-button.queue-corner-button--active .queue-corner-button-icon,
+wired-button.secondary-button.queue-corner-button--active .queue-corner-button-icon,
+wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-button-icon {
   filter: none;
 }
 
@@ -801,7 +907,7 @@ body.modal-scroll-locked {
 }
 
 .queue-auto-advance-label {
-  font-size: 0.76rem;
+  font-size: 0.86rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -834,7 +940,7 @@ body.modal-scroll-locked {
   margin-left: auto;
   margin-right: auto;
   text-align: center;
-  font-size: 0.92rem;
+  font-size: 1.02rem;
   line-height: 1.45;
   color: #4a4a4a;
 }
@@ -856,6 +962,46 @@ body.modal-scroll-locked {
   text-align: left;
 }
 
+.queue-auto-advance-setting-card--locked {
+  position: relative;
+}
+
+.queue-auto-advance-setting-card--locked .queue-auto-advance-setting-title,
+.queue-auto-advance-setting-card--locked .queue-auto-advance-setting-copy {
+  color: #6a6a6a;
+}
+
+.queue-auto-advance-setting-card--locked::after {
+  content: attr(data-lock-hint);
+  position: absolute;
+  top: 0.4rem;
+  right: 0.6rem;
+  max-width: min(16rem, calc(100% - 1.2rem));
+  padding: 0.34rem 0.48rem;
+  border-radius: 10px;
+  background: #111111;
+  color: #ffffff;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(-0.1rem);
+  pointer-events: none;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+  z-index: 5;
+}
+
+.queue-auto-advance-setting-card--locked:hover::after,
+.queue-auto-advance-setting-card--locked:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.queue-auto-advance-setting-card--locked wired-slider[disabled],
+.queue-auto-advance-setting-card--locked wired-toggle[disabled] {
+  opacity: 1 !important;
+}
+
 .queue-auto-advance-setting-card--inline {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -875,14 +1021,14 @@ body.modal-scroll-locked {
 }
 
 .queue-auto-advance-setting-title {
-  font-size: 0.95rem;
+  font-size: 1.08rem;
   font-weight: 800;
   color: #24303d;
 }
 
 .queue-auto-advance-setting-copy {
   display: block;
-  font-size: 0.84rem;
+  font-size: 0.98rem;
   line-height: 1.35;
   color: #5a5a5a;
 }
@@ -899,7 +1045,9 @@ body.modal-scroll-locked {
 }
 
 .queue-auto-advance-inline-control input,
-.queue-auto-advance-inline-control select {
+.queue-auto-advance-inline-control select,
+.queue-auto-advance-inline-control wired-input,
+.queue-auto-advance-inline-control .sketch-select {
   width: 5.25rem;
   margin: 0;
   padding-left: 0.75rem;
@@ -916,12 +1064,51 @@ body.modal-scroll-locked {
   text-align-last: center;
 }
 
+.queue-auto-advance-inline-control .queue-auto-advance-slider {
+  width: 9rem;
+  min-width: 9rem;
+  --wired-slider-knob-zero-color: #8c8c8c;
+  --wired-slider-knob-color: #111111;
+  --wired-slider-bar-color: #d2b384;
+}
+
+.queue-auto-advance-inline-control .queue-auto-advance-slider--inactive,
+.queue-auto-advance-setting-topline .queue-auto-advance-toggle--inactive {
+  pointer-events: none;
+  cursor: default;
+}
+
+.queue-auto-advance-inline-control .queue-auto-advance-slider--inactive {
+  --wired-slider-knob-zero-color: #b7b7b7;
+  --wired-slider-knob-color: #9e9e9e;
+  --wired-slider-bar-color: #d9d1c4;
+}
+
+.queue-auto-advance-setting-topline .queue-auto-advance-toggle {
+  width: 5rem;
+  min-width: 5rem;
+  height: 2.2rem;
+  color: #111111;
+  --wired-toggle-off-color: #8c8c8c;
+  --wired-toggle-on-color: #111111;
+}
+
+.queue-auto-advance-setting-topline .queue-auto-advance-toggle--dimmed {
+  color: #8f8f8f;
+  --wired-toggle-off-color: #b7b7b7;
+  --wired-toggle-on-color: #9e9e9e;
+}
+
+.queue-auto-advance-setting-topline .sketch-toggle {
+  flex: 0 0 auto;
+}
+
 .queue-auto-advance-inline-control input::-webkit-outer-spin-button,
 .queue-auto-advance-inline-control input::-webkit-inner-spin-button {
 }
 
 .queue-auto-advance-inline-control span {
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #7b5200;
   white-space: nowrap;
@@ -986,22 +1173,22 @@ body.modal-scroll-locked {
 @keyframes queueAutoAdvanceReveal {
   0% {
     opacity: 0;
-    transform: translateY(-0.4rem) scaleY(0.2);
+    transform: translateY(-0.4rem);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes queueAutoAdvanceHide {
   0% {
     opacity: 1;
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
   }
   100% {
     opacity: 0;
-    transform: translateY(-0.35rem) scaleY(0.2);
+    transform: translateY(-0.35rem);
   }
 }
 
@@ -1215,21 +1402,37 @@ body.modal-scroll-locked {
   z-index: 1000;
   background: rgba(12, 16, 20, 0.96);
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
-.event-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 980;
+.scanner-modal-card {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(12, 16, 20, 0.42);
-  backdrop-filter: blur(6px);
-  overscroll-behavior: none; /* prevent rubber-banding exposing transparent gap */
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-width: 100%;
+  max-height: 100dvh;
+  border-radius: 0;
+  background-color: transparent;
+  color: #111111;
+  box-sizing: border-box;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.event-details-dialog {
+  --wired-dialog-z-index: 980;
+  color: #111111;
 }
 
 .roster-graphs-panel {
@@ -1299,8 +1502,8 @@ body.modal-scroll-locked {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.35rem;
+  height: 2.35rem;
   padding: 0;
   margin: 0;
   border-radius: 999px;
@@ -1334,8 +1537,8 @@ body.modal-scroll-locked {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.35rem;
+  height: 2.35rem;
   padding: 0;
   margin: 0;
   border-radius: 999px;
@@ -1473,20 +1676,48 @@ body.modal-scroll-locked {
   inset: 0;
   z-index: 1010;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  overflow-x: clip;
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
   background: rgba(12, 16, 20, 0.5);
   backdrop-filter: blur(8px);
 }
 
 .graph-expand-modal {
-  width: min(96vw, 74rem);
-  max-height: min(92vh, 56rem);
-  overflow-y: auto;
-  border-radius: 28px;
-  background: #fffdf8;
-  box-shadow: #00000040 0 24px 56px;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  overscroll-behavior-x: none;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  background-color: transparent;
+  box-shadow: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.graph-expand-modal.sketch-modal-card {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
 }
 
 .graph-expand-modal-header {
@@ -1503,12 +1734,19 @@ body.modal-scroll-locked {
 }
 
 .graph-expand-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
   padding: 1rem;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
 }
 
 .graph-expand-modal .timeline-chart-summary {
-  grid-template-columns: repeat(3, minmax(0, 11rem));
-  justify-content: flex-start;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  justify-content: stretch;
 }
 
 .graph-expand-modal .graph-summary-card {
@@ -1525,38 +1763,36 @@ body.modal-scroll-locked {
 
 .graph-expand-modal .graph-chart-shell {
   padding: 1rem;
+  overflow-x: clip;
+}
+
+.graph-expand-modal .timeline-chart-card--expanded {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .event-modal {
-  width: min(100%, 42rem);
-  border-radius: 28px;
-  background: #ffffff;
-  border: 1px solid #d7d7d7;
-  box-shadow: #1f1f1f33 0 20px 48px;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 42rem);
+  max-width: min(92vw, 42rem);
+  height: auto;
+  max-height: min(90dvh, 52rem);
+  border-radius: 22px;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  box-sizing: border-box;
+  overflow: hidden;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  /* pin modal to viewport to avoid backdrop gap during over-scroll */
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  top: 1rem;
-  z-index: 990;
-
-  .graph-expand-backdrop {
-    padding: 1rem;
-  }
-
-  .graph-expand-modal-body,
-  .graph-expand-modal-header {
-    padding-left: 0.8rem;
-    padding-right: 0.8rem;
-  }
-
-  .graph-expand-modal .timeline-chart-summary {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  position: relative;
+  left: auto;
+  transform: none;
+  top: auto;
+  z-index: auto;
 }
 
 .event-modal-header {
@@ -1582,7 +1818,12 @@ body.modal-scroll-locked {
 }
 
 .event-modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: .5rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .event-modal-form {
@@ -1606,14 +1847,39 @@ body.modal-scroll-locked {
   width: 11rem;
 }
 
+.event-modal-form .title-font-select .sketch-select {
+  width: 11rem;
+}
+
+.event-modal-form .title-font-select .title-font-combo {
+  width: 11rem;
+}
+
 .event-modal-form .control-input-group input,
 .event-modal-form .control-input-group select {
   width: 100%;
   box-sizing: border-box;
 }
 
+.event-modal-form .control-input-group wired-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .event-modal-form .control-input-group--centered input,
 .event-modal-form .control-input-group--centered select {
+  width: min(100%, 28rem);
+}
+
+.event-modal-form .control-input-group--centered wired-input {
+  width: min(100%, 28rem);
+}
+
+.event-modal-form .control-input-group--centered .sketch-select {
+  width: min(100%, 28rem);
+}
+
+.event-modal-form .control-input-group--centered .sketch-combo {
   width: min(100%, 28rem);
 }
 
@@ -1632,6 +1898,18 @@ body.modal-scroll-locked {
   max-width: 11rem;
 }
 
+.event-modal-form .control-input-group--time wired-input {
+  max-width: 11rem;
+}
+
+.event-modal-form .control-input-group--time .sketch-select {
+  max-width: 11rem;
+}
+
+.event-modal-form .control-input-group--time .sketch-combo {
+  max-width: 11rem;
+}
+
 .event-modal-form .control-input-group--compact {
   width: min(100%, 18rem);
   margin-left: auto;
@@ -1643,9 +1921,30 @@ body.modal-scroll-locked {
   text-align: center;
 }
 
+.event-modal-form .control-input-group--compact wired-input {
+  max-width: 8.5rem;
+  text-align: center;
+}
+
 .event-modal-form .control-input-group--compact .control-input-hint {
   max-width: 18rem;
   text-align: center;
+}
+
+.event-modal-form .event-member-checkin-inline-control {
+  width: min(100%, 14rem);
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.event-modal-form .event-member-checkin-inline-control .event-member-checkin-slider {
+  width: 9rem !important;
+  min-width: 9rem !important;
+  flex: 0 0 9rem;
+  display: inline-block;
+  --wired-slider-knob-zero-color: #8c8c8c;
+  --wired-slider-knob-color: #111111;
+  --wired-slider-bar-color: #d2b384;
 }
 
 .event-modal-form .control-actions {
@@ -1653,8 +1952,37 @@ body.modal-scroll-locked {
   justify-content: center;
 }
 
-.event-modal-form .control-actions > button {
+.event-modal-form .control-actions > button,
+.event-modal-form .control-actions > wired-button {
   width: min(100%, 18rem);
+}
+
+.sketch-confirm-dialog {
+  --wired-dialog-z-index: 1400;
+  color: #111111;
+}
+
+.confirm-dialog-content {
+  width: min(92vw, 28rem);
+  text-align: left;
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.confirm-dialog-copy {
+  margin: 0.65rem 0 0;
+  color: #242424;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 1.1rem 0 0.2rem;
 }
 
 .scanner-modal-header {
@@ -1672,19 +2000,23 @@ body.modal-scroll-locked {
   margin: 0;
   padding: 0;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  border: 1px solid #d7d7d7;
+  background: #f4f4f4;
+  color: #111111;
   font-size: 1.8rem;
   line-height: 1;
 }
 
 .scanner-modal-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 1rem 1rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .scanner-video--modal {
@@ -1697,7 +2029,8 @@ body.modal-scroll-locked {
 
 .scanner-modal-footer {
   padding: 0 1rem 1.25rem;
-  color: rgba(255, 255, 255, 0.82);
+  color: #5a5a5a;
+  overflow-x: hidden;
 }
 
 .scanner-modal-footer p {
@@ -1758,6 +2091,10 @@ body.modal-scroll-locked {
 }
 
 .claim-modal-card .control-input-group input {
+  width: 100%;
+}
+
+.claim-modal-card .control-input-group wired-input {
   width: 100%;
 }
 
@@ -1822,7 +2159,9 @@ body.modal-scroll-locked {
   gap: 0.65rem;
 }
 
-.control-actions > button {
+.control-actions > button,
+.control-actions > wired-button,
+.control-actions > wired-icon-button {
   min-height: 3.7rem;
   width: 100%;
   margin: 0;
@@ -1890,7 +2229,13 @@ body.modal-scroll-locked {
 
 button:hover .icon-animated,
 button:focus-visible .icon-animated,
-button:active .icon-animated {
+button:active .icon-animated,
+wired-button:hover .icon-animated,
+wired-button:focus-visible .icon-animated,
+wired-button:active .icon-animated,
+wired-icon-button:hover .icon-animated,
+wired-icon-button:focus-visible .icon-animated,
+wired-icon-button:active .icon-animated {
   animation-play-state: running !important;
 }
 
@@ -1989,14 +2334,16 @@ button:active .icon-animated {
   flex-wrap: nowrap;
   justify-content: center;
   gap: 0.75rem;
-  width: min(calc(100vw - 1rem), 46rem);
   padding: 0.85rem;
-  border: 1px solid #181818;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 4px 32px 0 #3a3a3a33, 0 1.5px 8px 0 #7b520026;
-  backdrop-filter: blur(14px);
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
   transition: box-shadow 0.18s, border 0.18s;
+  background: #ffffff;
+}
+
+.bottom-navbar.sketch-navbar-card {
+  --wired-card-background-fill: #111111;
 }
 
 .bottom-navbar-button {
@@ -2020,6 +2367,18 @@ button:active .icon-animated {
   z-index: 1;
   cursor: pointer;
 }
+
+.bottom-navbar-button .button-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.1rem;
+}
+
+.bottom-navbar-button span {
+  display: inline-block;
+  vertical-align: middle;
+}
+
 .bottom-navbar-button:active, .bottom-navbar-button:focus {
   background: #ffbe5c33;
   color: #7b5200;
@@ -2113,16 +2472,10 @@ button:active .icon-animated {
 
 .stat-progress {
   width: 100%;
-  height: 0.65rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #eef1f4;
-}
-
-.stat-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #186a3b 0%, #31a85a 100%);
+  --wired-progress-color: rgba(24, 106, 59, 0.9);
+  --wired-progress-label-color: transparent;
+  --wired-progress-label-background: transparent;
+  --wired-progress-font-size: 0px;
 }
 
 .stat-progress-copy {
@@ -2169,6 +2522,12 @@ button:active .icon-animated {
   border: 1px solid #7d7d7d;
 }
 
+.control-input-group wired-input {
+  width: min(100%, 28rem);
+  font-size: 1.05rem;
+  color: #111111;
+}
+
 .control-input-group select {
   width: min(100%, 28rem);
   padding: 0.85rem 1rem;
@@ -2177,6 +2536,30 @@ button:active .icon-animated {
   border: 1px solid #7d7d7d;
   background: #ffffff;
   color: #111111;
+}
+
+.control-input-group .sketch-select {
+  width: min(100%, 28rem);
+}
+
+.control-input-group .sketch-combo {
+  width: min(100%, 28rem);
+  color: #111111;
+  --wired-combo-popup-bg: #ffffff;
+  --wired-item-selected-bg: #111111;
+  --wired-item-selected-color: #ffffff;
+}
+
+.control-input-group .sketch-select select {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 1.05rem;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent;
+  color: #111111;
+  box-sizing: border-box;
+  outline: none;
 }
 
 .control-input-group--centered {
@@ -2188,7 +2571,19 @@ button:active .icon-animated {
   width: min(100%, 36rem);
 }
 
+.control-input-group--centered wired-input {
+  width: min(100%, 36rem);
+}
+
 .control-input-group--centered select {
+  width: min(100%, 36rem);
+}
+
+.control-input-group--centered .sketch-select {
+  width: min(100%, 36rem);
+}
+
+.control-input-group--centered .sketch-combo {
   width: min(100%, 36rem);
 }
 
@@ -2200,6 +2595,24 @@ button:active .icon-animated {
 }
 
 .control-input-group--time input {
+  width: 100%;
+  max-width: 12rem;
+  box-sizing: border-box;
+}
+
+.control-input-group--time wired-input {
+  width: 100%;
+  max-width: 12rem;
+  box-sizing: border-box;
+}
+
+.control-input-group--time .sketch-select {
+  width: 100%;
+  max-width: 12rem;
+  box-sizing: border-box;
+}
+
+.control-input-group--time .sketch-combo {
   width: 100%;
   max-width: 12rem;
   box-sizing: border-box;
@@ -2244,6 +2657,76 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.sketch-button {
+  margin: 0.25rem;
+  padding: 0;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  overflow: visible !important;
+  clip-path: none !important;
+}
+
+.sketch-icon-button {
+  margin: 0.25rem;
+  padding: 0;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  cursor: pointer;
+  overflow: visible !important;
+  clip-path: none !important;
+}
+
+.sketch-checkbox {
+  margin: 0;
+}
+
+.sketch-toggle {
+  margin: 0;
+  --wired-toggle-off-color: #8c8c8c;
+  --wired-toggle-on-color: #111111;
+}
+
+.sketch-slider {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.sketch-progress {
+  display: block;
+  width: 100%;
+}
+
+wired-button.queue-corner-button,
+wired-button.claim-corner-button,
+wired-button.timeline-chart-close,
+wired-button.timeline-chart-expand,
+wired-button.event-modal-close,
+wired-button.scanner-close-button,
+wired-button.icon-button,
+wired-button.roster-remove-button,
+wired-icon-button.queue-corner-button,
+wired-icon-button.claim-corner-button,
+wired-icon-button.timeline-chart-close,
+wired-icon-button.timeline-chart-expand,
+wired-icon-button.event-modal-close,
+wired-icon-button.scanner-close-button,
+wired-icon-button.icon-button,
+wired-icon-button.roster-remove-button {
+  overflow: visible !important;
+  clip-path: none !important;
+}
+
+wired-button.queue-corner-button,
+wired-button.claim-corner-button,
+wired-icon-button.queue-corner-button,
+wired-icon-button.claim-corner-button {
+  opacity: 1 !important;
+}
+
 .secondary-button {
   background: #f4f4f4;
   border: 1px solid #c7c7c7;
@@ -2258,7 +2741,7 @@ button:disabled {
   border-radius: 999px; /* Fully rounded for End Event */
 }
 
-.danger-button:hover:not(:disabled) {
+button.danger-button:hover:not(:disabled) {
   background: #b71c1c;
   border-color: #8e1717;
 }
@@ -2269,9 +2752,57 @@ button:disabled {
   color: #ffffff;
 }
 
-.ready-button:hover:not(:disabled) {
+button.ready-button:hover:not(:disabled) {
   background: #276b2b;
   border-color: #1f5722;
+}
+
+.sketch-button.secondary-button,
+.sketch-button.danger-button,
+.sketch-button.ready-button {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.sketch-icon-button.secondary-button,
+.sketch-icon-button.danger-button,
+.sketch-icon-button.ready-button {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.sketch-button.secondary-button {
+  color: #111111;
+}
+
+.sketch-icon-button.secondary-button {
+  color: #111111;
+}
+
+.sketch-button.secondary-button.queue-corner-button--active,
+.sketch-button.secondary-button.claim-corner-button--active,
+.sketch-icon-button.secondary-button.queue-corner-button--active,
+.sketch-icon-button.secondary-button.claim-corner-button--active {
+  background: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+.sketch-button.secondary-button.queue-corner-button--active .queue-corner-button-icon,
+.sketch-button.secondary-button.claim-corner-button--active .button-icon,
+.sketch-icon-button.secondary-button.queue-corner-button--active .queue-corner-button-icon,
+.sketch-icon-button.secondary-button.claim-corner-button--active .button-icon {
+  filter: brightness(0) invert(1);
+}
+
+.sketch-button.danger-button {
+  color: #c62828;
+}
+
+.sketch-button.ready-button {
+  color: #2e7d32;
 }
 
 .assigned-number {
@@ -2500,19 +3031,23 @@ li {
 }
 
 .rules-qr-container {
-  display: flex;
-  gap: 1.5rem;
+  display: block !important;
   flex: 0 0 auto;
-  align-items: center;
   margin-top: 0;
   padding: 0.9rem 1rem;
   border-radius: 24px;
   width: 100%;
-  border: #7d7d7d 1.5px solid;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(14px);
-  box-shadow: #34343441 0 0 10px 1px;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
   width: fit-content;
+}
+
+.rules-qr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1.5rem;
 }
 
 .rules-qr-container ol {
@@ -2535,6 +3070,7 @@ li {
 
 .qr-code--claim {
   padding-top: 0;
+  justify-self: end;
 }
 
 .qr-claim-copy {
@@ -2581,17 +3117,10 @@ li {
 
 .qr-refresh-track {
   width: 100%;
-  height: 0.65rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #f1e9de; /* warmer, on-theme background */
-}
-
-.qr-refresh-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #ffbe5c 0%, #c89c6d 60%, #bd915f 100%); /* on-theme gold → orange gradient */
-  transition: width 0.9s linear;
+  --wired-progress-color: rgba(200, 156, 109, 0.92);
+  --wired-progress-label-color: transparent;
+  --wired-progress-label-background: transparent;
+  --wired-progress-font-size: 0px;
 }
 
 @media (max-width: 900px) {
@@ -2600,20 +3129,14 @@ li {
   }
 
   .event-modal {
-    width: min(100%, 36rem);
-    max-height: calc(100vh - 1.5rem);
-    border-radius: 16px;
-  }
-
-  /* On small screens, pin the modal to the top so overscroll doesn't reveal backdrop */
-  .event-modal-backdrop {
-    align-items: flex-start;
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
+    width: min(94vw, 38rem);
+    max-width: min(94vw, 38rem);
+    max-height: min(90dvh, 48rem);
+    border-radius: 18px;
   }
 
   .event-modal {
-    margin: 0 auto;
+    margin: 0;
   }
 
   .event-modal-content {
@@ -2626,6 +3149,7 @@ li {
   }
 
   .event-modal-form .control-input-group input,
+  .event-modal-form .control-input-group wired-input,
   .event-modal-form .control-input-group select {
     padding: 0.75rem 0.85rem;
     font-size: 0.98rem;
@@ -2639,7 +3163,10 @@ li {
   }
 
   .event-modal-form .control-input-group--time,
-  .event-modal-form .control-input-group--time input {
+  .event-modal-form .control-input-group--time input,
+  .event-modal-form .control-input-group--time wired-input,
+  .event-modal-form .control-input-group--time .sketch-select,
+  .event-modal-form .control-input-group--time .sketch-combo {
     max-width: 10rem;
   }
 
@@ -2647,7 +3174,8 @@ li {
     width: min(100%, 16rem);
   }
 
-  .event-modal-form .control-input-group--compact input {
+  .event-modal-form .control-input-group--compact input,
+  .event-modal-form .control-input-group--compact wired-input {
     max-width: 7.5rem;
   }
 
@@ -2830,7 +3358,8 @@ li {
     padding-right: 0;
   }
 
-  .control-input-group input {
+  .control-input-group input,
+  .control-input-group wired-input {
     width: 100%;
   }
 
@@ -2842,7 +3371,9 @@ li {
     width: min(100%, 16rem);
   }
 
-  .control-input-group--time input {
+  .control-input-group--time input,
+  .control-input-group--time wired-input,
+  .control-input-group--time .sketch-select {
     max-width: 16rem;
   }
 
@@ -2926,7 +3457,10 @@ li {
 
 @media (max-width: 640px) {
   .event-modal {
-    border-radius: 24px;
+    width: min(96vw, 34rem);
+    max-width: min(96vw, 34rem);
+    max-height: 88dvh;
+    border-radius: 16px;
   }
 
   .event-modal-header {
@@ -2953,6 +3487,7 @@ li {
   }
 
   .event-modal-form .control-input-group input,
+  .event-modal-form .control-input-group wired-input,
   .event-modal-form .control-input-group select {
     padding: 0.68rem 0.78rem;
     font-size: 0.95rem;
@@ -2972,8 +3507,14 @@ li {
 
   .event-modal-form .control-input-group--time,
   .event-modal-form .control-input-group--time input,
+  .event-modal-form .control-input-group--time wired-input,
+  .event-modal-form .control-input-group--time .sketch-select,
+  .event-modal-form .control-input-group--time .sketch-combo,
   .event-modal-form .control-input-group--compact,
-  .event-modal-form .control-input-group--compact input {
+  .event-modal-form .control-input-group--compact input,
+  .event-modal-form .control-input-group--compact wired-input,
+  .event-modal-form .control-input-group--compact .sketch-select,
+  .event-modal-form .control-input-group--compact .sketch-combo {
     max-width: 10rem;
   }
 

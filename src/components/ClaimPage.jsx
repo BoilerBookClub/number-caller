@@ -1,3 +1,4 @@
+import { useState } from "react";
 import QRCode from "react-qr-code";
 import {
   BellRing,
@@ -7,6 +8,7 @@ import {
   Settings,
 } from "lucide-react";
 import bbcLogo from "../assets/bbc_logo.png";
+import { SketchButton, SketchCard, SketchDialog, SketchIconButton } from "./SketchUI";
 import Spinner from "./Spinner";
 import { getEventTitleClassName } from "../titleFonts";
 
@@ -32,8 +34,15 @@ function ClaimRulesModal({
   onAcknowledgeRules,
 }) {
   return (
-    <div className="claim-rules-backdrop" role="presentation">
-      <div className="claim-rules-modal" role="dialog" aria-modal="true" aria-label="Claim rules">
+    <SketchDialog
+      className="claim-rules-dialog"
+      open
+      elevation={2}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Claim rules"
+    >
+      <div className="claim-rules-modal">
         <div className="claim-rules-content">
           <p className="eyebrow">Before You Start</p>
           <h2>Welcome to {liveState.title}!</h2>
@@ -48,13 +57,13 @@ function ClaimRulesModal({
             </ol>
           </div>
           <div className="claim-rules-actions">
-            <button type="button" onClick={onAcknowledgeRules}>
+            <SketchButton type="button" onClick={onAcknowledgeRules}>
               Got it!
-            </button>
+            </SketchButton>
           </div>
         </div>
       </div>
-    </div>
+    </SketchDialog>
   );
 }
 
@@ -84,8 +93,11 @@ function ClaimResultCard({
   const isClaimActive = Boolean(showClaimQr && claimRecord);
 
   return (
-    <div className={`entry-card assigned-card claim-modal-card${showClaimQr ? " claim-modal-card--active" : ""}`}>
-      <button
+    <SketchCard
+      className={`entry-card assigned-card claim-modal-card sketch-entry-card${showClaimQr ? " claim-modal-card--active" : ""}`}
+      elevation={2}
+    >
+      <SketchIconButton
         className={`secondary-button claim-corner-button claim-corner-button--left${areClaimNotificationsEnabled ? " claim-corner-button--active" : ""}`}
         type="button"
         onClick={onToggleClaimNotifications}
@@ -93,8 +105,8 @@ function ClaimResultCard({
         title={notificationButtonLabel}
       >
         <BellRing aria-hidden="true" className="button-icon icon-animated icon-animate-bell" />
-      </button>
-      <button
+      </SketchIconButton>
+      <SketchIconButton
         className="secondary-button claim-corner-button claim-corner-button--right"
         type="button"
         onClick={onOpenClaimRules}
@@ -102,7 +114,7 @@ function ClaimResultCard({
         title="Read event info"
       >
         <Info aria-hidden="true" className="button-icon icon-animated icon-animate-float" />
-      </button>
+      </SketchIconButton>
       <div className="claim-ticket-logo-wrap">
         <img src={bbcLogo} alt="Boiler Book Club logo" className="claim-ticket-logo" />
       </div>
@@ -125,9 +137,9 @@ function ClaimResultCard({
         </div>
       ) : null}
       <div className="claim-card-actions">
-        <button className="secondary-button" type="button" onClick={onOpenBookList}>
+        <SketchButton className="secondary-button" type="button" onClick={onOpenBookList}>
           Open Book Descriptions
-        </button>
+        </SketchButton>
       </div>
       {!isClaimActive ? (() => {
         const isFinalCall = Boolean(liveState?.finalCall);
@@ -149,9 +161,9 @@ function ClaimResultCard({
         if (isFinalCall) {
           return (
             <div className="claim-status-grid claim-status-grid--single">
-              <div className="stat-card claim-status-card">
+              <SketchCard className="stat-card claim-status-card sketch-entry-card" elevation={1}>
                 <strong>Final Call</strong>
-              </div>
+              </SketchCard>
             </div>
           );
         }
@@ -159,30 +171,30 @@ function ClaimResultCard({
         if (isRoundStartingSoon) {
           return shouldShowRoundOneCountdown ? (
             <div className="claim-status-grid claim-status-grid--single">
-              <div className="stat-card claim-status-card">
+              <SketchCard className="stat-card claim-status-card sketch-entry-card" elevation={1}>
                 <span>Round 1 Starts In</span>
                 <strong>{formatCountdownDuration(remainingUntilEventStartMs)}</strong>
-              </div>
+              </SketchCard>
             </div>
           ) : (
             <div className="claim-status-grid claim-status-grid--single">
-              <div className="stat-card claim-status-card">
+              <SketchCard className="stat-card claim-status-card sketch-entry-card" elevation={1}>
                 <strong>Round {currentRound} is Starting Soon</strong>
-              </div>
+              </SketchCard>
             </div>
           );
         }
 
         return (
           <div className="claim-status-grid">
-            <div className="stat-card">
+            <SketchCard className="stat-card sketch-entry-card" elevation={1}>
               <span>Round</span>
               <strong>{currentRound}</strong>
-            </div>
-            <div className="stat-card">
+            </SketchCard>
+            <SketchCard className="stat-card sketch-entry-card" elevation={1}>
               <span>Currently</span>
               <strong>{liveCallLabel}</strong>
-            </div>
+            </SketchCard>
           </div>
         );
       })() : null}
@@ -203,7 +215,7 @@ function ClaimResultCard({
           </div>
         )}
       </div>
-    </div>
+    </SketchCard>
   );
 }
 
@@ -247,9 +259,22 @@ function MemberClaimCard({
     assignmentCountdownMs > 0;
   const assignmentCountdownLabel =
     isMember && hasMemberEarlyAccessTime ? "Member early check-in opens in" : "Event opens in";
+  const [isManualClaimDialogOpen, setIsManualClaimDialogOpen] = useState(false);
+
+  const closeManualClaimDialog = () => {
+    setIsManualClaimDialogOpen(false);
+  };
+
+  const handleConfirmManualClaim = () => {
+    setIsManualClaimDialogOpen(false);
+
+    if (typeof onManualClaim === "function") {
+      onManualClaim();
+    }
+  };
 
   return (
-    <div className="entry-card claim-modal-card">
+    <SketchCard className="entry-card claim-modal-card sketch-entry-card" elevation={2}>
       <p className="eyebrow">Live Event</p>
       {!loggedIn ? <p className="eyebrow">Reserve Your Spot</p> : null}
       {liveEvent.timeframeLabel ? <p style={{ margin: 0 }}>{liveEvent.timeframeLabel}</p> : null}
@@ -257,9 +282,9 @@ function MemberClaimCard({
       <p>
       </p>
       {!loggedIn ? (
-        <button onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
+        <SketchButton onClick={onStartOAuthGrant} disabled={isCheckingAccess || claimLoading}>
           {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
-        </button>
+        </SketchButton>
       ) : null}
       {loggedIn && isCheckingAccess ? <p>Checking your membership...</p> : null}
       {loggedIn && !isCheckingAccess && authError ? <p className="entry-message">{authError}</p> : null}
@@ -300,12 +325,32 @@ function MemberClaimCard({
         </>
       ) : null}
       {loggedIn && !isCheckingAccess && !claimLoading && !authError && !claimResult && allowManualClaim ? (
-        <button type="button" onClick={onManualClaim}>
+        <SketchButton type="button" onClick={() => setIsManualClaimDialogOpen(true)}>
           Give Me a Number
-        </button>
+        </SketchButton>
       ) : null}
       {claimError ? <p className="entry-message">{claimError}</p> : null}
-    </div>
+      <SketchDialog
+        className="sketch-confirm-dialog"
+        open={isManualClaimDialogOpen}
+        onClose={closeManualClaimDialog}
+      >
+        <div className="confirm-dialog-content">
+          <h3 className="confirm-dialog-title">Give yourself a number now?</h3>
+          <p className="confirm-dialog-copy">
+            This will assign you a number immediately.
+          </p>
+          <div className="confirm-dialog-actions">
+            <SketchButton type="button" className="secondary-button" onClick={closeManualClaimDialog}>
+              Cancel
+            </SketchButton>
+            <SketchButton type="button" onClick={handleConfirmManualClaim}>
+              Give Me a Number
+            </SketchButton>
+          </div>
+        </div>
+      </SketchDialog>
+    </SketchCard>
   );
 }
 
@@ -343,20 +388,20 @@ function ClaimPage(props) {
       {!claimResult ? <MemberClaimCard {...props} /> : null}
       {claimResult && isClaimRulesOpen ? <ClaimRulesModal {...props} /> : null}
       {showControlNavbar ? (
-        <div className="bottom-navbar">
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
+        <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
+          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
             <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
             <span>Open Scanner</span>
-          </button>
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
+          </SketchButton>
+          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
             <Settings aria-hidden="true" className="button-icon icon-animated icon-animate-spin-slow" />
             <span>Control Panel</span>
-          </button>
-          <button className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+          </SketchButton>
+          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
             <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
             <span>Open Display</span>
-          </button>
-        </div>
+          </SketchButton>
+        </SketchCard>
       ) : null}
     </div>
   );
