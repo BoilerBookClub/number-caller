@@ -8,6 +8,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   getFirestore,
   onSnapshot,
   runTransaction,
@@ -295,18 +296,45 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
     return () => {};
   }
 
-  return onSnapshot(
-    getClaimRef(claimId),
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onClaim(null);
+  // Workaround for an intermittent Firestore watch-stream internal assertion
+  // (`Unexpected state` IDs such as ca9/b815) observed during rapid claim/preclaim
+  // create/delete flows. Polling avoids that watch edge case.
+  let isDisposed = false;
+  let timeoutId = null;
+
+  const poll = async () => {
+    if (isDisposed) {
+      return;
+    }
+
+    try {
+      const snapshot = await getDoc(getClaimRef(claimId));
+      if (isDisposed) {
         return;
       }
 
-      onClaim(snapshot.data());
-    },
-    onError,
-  );
+      onClaim(snapshot.exists() ? snapshot.data() : null);
+    } catch (error) {
+      if (!isDisposed && typeof onError === "function") {
+        onError(error);
+      }
+    } finally {
+      if (!isDisposed) {
+        timeoutId = window.setTimeout(() => {
+          void poll();
+        }, 1200);
+      }
+    }
+  };
+
+  void poll();
+
+  return () => {
+    isDisposed = true;
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  };
 };
 
 export const readPreclaimOnce = async ({ claimId }) => {
@@ -326,19 +354,42 @@ export const subscribeToPreclaim = ({ claimId, onPreclaim, onError }) => {
   }
 
   const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
+  let isDisposed = false;
+  let timeoutId = null;
 
-  return onSnapshot(
-    preclaimRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onPreclaim(null);
+  const poll = async () => {
+    if (isDisposed) {
+      return;
+    }
+
+    try {
+      const snapshot = await getDoc(preclaimRef);
+      if (isDisposed) {
         return;
       }
 
-      onPreclaim(snapshot.data());
-    },
-    onError,
-  );
+      onPreclaim(snapshot.exists() ? snapshot.data() : null);
+    } catch (error) {
+      if (!isDisposed && typeof onError === "function") {
+        onError(error);
+      }
+    } finally {
+      if (!isDisposed) {
+        timeoutId = window.setTimeout(() => {
+          void poll();
+        }, 1200);
+      }
+    }
+  };
+
+  void poll();
+
+  return () => {
+    isDisposed = true;
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  };
 };
 
 export const subscribeToDisplayFeed = ({ onFeed, onError }) => {
@@ -376,18 +427,47 @@ export const subscribeToClaims = ({ onClaims, onError }) => {
     return () => {};
   }
 
-  return onSnapshot(
-    claimsCollectionRef,
-    (snapshot) => {
+  let isDisposed = false;
+  let timeoutId = null;
+
+  const poll = async () => {
+    if (isDisposed) {
+      return;
+    }
+
+    try {
+      const snapshot = await getDocs(claimsCollectionRef);
+      if (isDisposed) {
+        return;
+      }
+
       onClaims(
         snapshot.docs.map((claimDoc) => ({
           claimId: claimDoc.id,
           ...claimDoc.data(),
         })),
       );
-    },
-    onError,
-  );
+    } catch (error) {
+      if (!isDisposed && typeof onError === "function") {
+        onError(error);
+      }
+    } finally {
+      if (!isDisposed) {
+        timeoutId = window.setTimeout(() => {
+          void poll();
+        }, 1400);
+      }
+    }
+  };
+
+  void poll();
+
+  return () => {
+    isDisposed = true;
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  };
 };
 
 export const createLiveEvent = async ({

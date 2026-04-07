@@ -64,6 +64,7 @@ body.modal-scroll-locked {
 
 .display {
   --display-stage-max-width: 78rem;
+  --display-time-font-size: clamp(1.2rem, 2.4vw, 2rem);
   min-height: 100vh;
   box-sizing: border-box;
   display: flex;
@@ -92,7 +93,7 @@ body.modal-scroll-locked {
 
 .display-header-group .eyebrow {
   margin: 0;
-  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  font-size: var(--display-time-font-size);
   line-height: 1.1;
 }
 
@@ -105,11 +106,15 @@ body.modal-scroll-locked {
 
 .display-round {
   margin: 0;
+  font-size: var(--display-time-font-size);
+  line-height: 1.1;
   color: #7b5200;
 }
 
 .display-call-subtitle {
   margin: 0;
+  font-size: var(--display-time-font-size);
+  line-height: 1.1;
   color: #7b5200;
 }
 
@@ -3016,7 +3021,7 @@ button.ready-button:hover:not(:disabled) {
   width: 100%;
   min-width: 0;
   max-width: 20rem;
-  font-size: clamp(1.15rem, 2.1vw, 1.8rem);
+  font-size: clamp(1rem, 1.8vw, 1.55rem);
   line-height: 1.15;
 }
 
@@ -3406,7 +3411,7 @@ li {
 
   .display-feed-copy {
     max-width: 100%;
-    font-size: clamp(1rem, 4.4vw, 1.45rem);
+    font-size: clamp(0.92rem, 4vw, 1.25rem);
   }
 
   .qr-claim-copy {
