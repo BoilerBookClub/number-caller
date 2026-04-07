@@ -907,6 +907,109 @@ export const moveClaimBackToQueueAsStaff = onCall(async (request) => {
   return { moved: true };
 });
 
+export const redeemClaimByQrAsStaff = onCall(async (request) => {
+  if (!request.auth || request.auth.token.staff !== true) {
+    throw new HttpsError("permission-denied", "Not authorized to redeem claims.");
+  }
+
+  const claimId = request.data?.claimId;
+  const eventId = request.data?.eventId;
+  const qrToken = request.data?.qrToken;
+
+  if (
+    !claimId || typeof claimId !== "string" ||
+    !eventId || typeof eventId !== "string" ||
+    !qrToken || typeof qrToken !== "string"
+  ) {
+    throw new HttpsError("invalid-argument", "claimId, eventId, and qrToken are required.");
+  }
+
+  const liveEventRef = db.doc(LIVE_EVENT_PATH);
+  const claimRef = db.doc(`${LIVE_EVENT_PATH}/claims/${claimId}`);
+  let result = null;
+
+  await db.runTransaction(async (tx) => {
+    const [liveEventSnapshot, claimSnapshot] = await Promise.all([
+      tx.get(liveEventRef),
+      tx.get(claimRef),
+    ]);
+
+    if (!liveEventSnapshot.exists) {
+      throw new HttpsError("failed-precondition", "The event is not open yet.");
+    }
+
+    if (!claimSnapshot.exists) {
+      throw new HttpsError("not-found", "This claim could not be found.");
+    }
+
+    const liveEvent = liveEventSnapshot.data() || {};
+    const claim = claimSnapshot.data() || {};
+    const currentRoundRaw = Number.parseInt(liveEvent?.state?.round, 10);
+    const currentRound = Number.isFinite(currentRoundRaw) && currentRoundRaw > 0 ? currentRoundRaw : 1;
+    const currentNumberRaw = Number.parseInt(liveEvent?.state?.current, 10);
+    const currentNumber = Number.isFinite(currentNumberRaw) && currentNumberRaw >= 0 ? currentNumberRaw : 0;
+    const claimNumber = toPositiveInteger(claim.number) ?? 0;
+    const redeemedRoundRaw = Number.parseInt(claim.redeemedRound, 10);
+    const redeemedRound =
+      Number.isFinite(redeemedRoundRaw) && redeemedRoundRaw >= 0 ? redeemedRoundRaw : 0;
+
+    if (!liveEvent.active || liveEvent.eventId !== eventId) {
+      throw new HttpsError("failed-precondition", "This QR code is for a different event.");
+    }
+
+    if (claim.eventId !== eventId || claim.qrToken !== qrToken) {
+      throw new HttpsError("failed-precondition", "This QR code is no longer valid.");
+    }
+
+    if (claimNumber < 1 || currentNumber < claimNumber) {
+      throw new HttpsError("failed-precondition", "This number is not eligible yet.");
+    }
+
+    if (redeemedRound === currentRound) {
+      result = {
+        alreadyRedeemed: true,
+        displayName: claim.displayName || "",
+        number: claimNumber,
+        round: currentRound,
+      };
+      return;
+    }
+
+    const existingHistory = Array.isArray(claim.itemClaimedAtMsHistory)
+      ? claim.itemClaimedAtMsHistory.filter((value) => Number.isFinite(value))
+      : [];
+    const nowMs = Date.now();
+    const nextItemClaimedAtMsHistory = [...existingHistory, nowMs];
+    const currentItemsClaimedCount = Number.parseInt(claim.itemsClaimedCount, 10);
+    const nextItemsClaimedCount =
+      (Number.isFinite(currentItemsClaimedCount) && currentItemsClaimedCount >= 0
+        ? currentItemsClaimedCount
+        : 0) + 1;
+
+    tx.set(claimRef, {
+      itemClaimedAtMsHistory: nextItemClaimedAtMsHistory,
+      itemsClaimedCount: nextItemsClaimedCount,
+      redeemedAt: nowMs,
+      redeemedRound: currentRound,
+      updatedAt: nowMs,
+    }, { merge: true });
+
+    result = {
+      alreadyRedeemed: false,
+      displayName: claim.displayName || "",
+      number: claimNumber,
+      round: currentRound,
+    };
+  });
+
+  return result ?? {
+    alreadyRedeemed: false,
+    displayName: "",
+    number: 0,
+    round: 1,
+  };
+});
+
 export const syncDisplayFeedForClaimChanges = onDocumentWritten(
   `${LIVE_EVENT_PATH}/claims/{claimId}`,
   async (event) => {

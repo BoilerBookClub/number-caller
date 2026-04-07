@@ -150,6 +150,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'avatarUrl',
           'claimedAt',
+          'joinedAt',
           'discordUserId',
           'displayName',
           'email',
@@ -166,6 +167,7 @@ service cloud.firestore {
         ])
         && data.avatarUrl is string
         && data.avatarUrl.size() <= 2048
+        && (data.joinedAt == null || data.joinedAt is timestamp || data.joinedAt is int)
         && (data.discordUserId == null || data.discordUserId is string)
         && data.displayName is string
         && data.displayName.size() > 0
@@ -216,6 +218,7 @@ service cloud.firestore {
 
     function claimIdentityUnchanged() {
       return request.resource.data.claimedAt == resource.data.claimedAt
+        && request.resource.data.joinedAt == resource.data.joinedAt
         && request.resource.data.discordUserId == resource.data.discordUserId
         && request.resource.data.email == resource.data.email
         && request.resource.data.eventId == resource.data.eventId
@@ -265,11 +268,13 @@ service cloud.firestore {
           && validClaimDocument(request.resource.data)
           && request.resource.data.eventId == get(/databases/$(database)/documents/events/live-number-caller).data.eventId;
         allow update: if isLiveEventDoc(eventId)
-          && validClaimDocument(request.resource.data)
           && (
+            // Staff scanner updates should be allowed for legacy claim docs
+            // as long as only claim-status fields change.
             (isStaff() && staffClaimStatusChangeAllowed())
             || (
               isOwnClaim(resource.data)
+              && validClaimDocument(request.resource.data)
               && claimIdentityUnchanged()
               && attendeeClaimStatusUnchanged()
             )

@@ -91,6 +91,9 @@ const removeClaimCallable = firebaseEnabled ? httpsCallable(functions, "removeCl
 const moveClaimBackToQueueAsStaffCallable = firebaseEnabled
   ? httpsCallable(functions, "moveClaimBackToQueueAsStaff")
   : null;
+const redeemClaimByQrAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "redeemClaimByQrAsStaff")
+  : null;
 const readPreclaimForUserCallable = firebaseEnabled
   ? httpsCallable(functions, "readPreclaimForUser")
   : null;
@@ -703,6 +706,19 @@ export const updatePreclaimMembership = async ({
 export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
   if (!firebaseEnabled) {
     throw new Error("Firebase is not configured.");
+  }
+
+  if (redeemClaimByQrAsStaffCallable) {
+    if (auth?.currentUser) {
+      try {
+        await auth.currentUser.getIdToken(true);
+      } catch {
+        // Continue; callable will surface a clear auth error if token is invalid.
+      }
+    }
+
+    const result = await redeemClaimByQrAsStaffCallable({ claimId, eventId, qrToken });
+    return result.data;
   }
 
   const claimRef = getClaimRef(claimId);
