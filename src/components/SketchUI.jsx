@@ -181,8 +181,37 @@ const SketchCombo = forwardRef(function SketchCombo(
       return;
     }
 
-    comboElement.selected = selected == null ? "" : String(selected);
-  }, [selected]);
+    const normalizedSelected = selected == null ? "" : String(selected);
+    let frameId = null;
+    let timeoutId = null;
+
+    const applySelectedValue = () => {
+      comboElement.selected = normalizedSelected;
+
+      // wired-combo can throw if refreshSelection runs before its shadow slot is ready.
+      const slotElement = comboElement.shadowRoot?.getElementById?.("slot");
+      if (slotElement && typeof comboElement.refreshSelection === "function") {
+        comboElement.refreshSelection();
+      }
+
+      if (typeof comboElement.requestUpdate === "function") {
+        comboElement.requestUpdate();
+      }
+    };
+
+    applySelectedValue();
+    frameId = window.requestAnimationFrame(applySelectedValue);
+    timeoutId = window.setTimeout(applySelectedValue, 0);
+
+    return () => {
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [selected, children]);
 
   useEffect(() => {
     const comboElement = innerRef.current;

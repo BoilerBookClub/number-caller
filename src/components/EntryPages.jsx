@@ -41,54 +41,25 @@ function ControlAccessDenied({
 }
 
 function ClosedEventPage({
-  authError,
   endedEventTitle,
-  handleLogout,
-  hasFullAccess,
-  isCheckingAccess,
-  loggedIn,
-  onOpenControl,
-  onStartOAuthGrant,
 }) {
   return (
     <div className="entry-screen">
       {endedEventTitle ? (
         <SketchCard className="entry-card hero-card sketch-entry-card" elevation={2}>
-            <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+          <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
           <p className="eyebrow">The Event Has Ended</p>
           <h1>Thanks for coming to {endedEventTitle}!</h1>
           <p className="eyebrow">See you again soon ;)</p>
         </SketchCard>
-      ) : null}
-      {!endedEventTitle ? (
-        <SketchCard className="entry-card-centered sketch-entry-card" elevation={2}>
-          <h2 className="entry-heading-with-logo">
-            <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
-            <span>Event Staff Login</span>
-          </h2>
-          <div className="entry-staff-action">
-            {!loggedIn ? (
-              <SketchButton onClick={onStartOAuthGrant} disabled={isCheckingAccess}>
-                {isCheckingAccess ? "Checking Discord..." : "Login with Discord"}
-              </SketchButton>
-            ) : null}
-            {loggedIn && hasFullAccess && !isCheckingAccess ? (
-              <SketchButton onClick={onOpenControl}>Open Control Panel</SketchButton>
-            ) : null}
-            {loggedIn && !hasFullAccess && !isCheckingAccess ? (
-              <SketchButton className="secondary-button" onClick={handleLogout}>
-                Logout
-              </SketchButton>
-            ) : null}
-          </div>
-          {loggedIn && !hasFullAccess && !isCheckingAccess ? (
-            <p className="entry-message">
-              This login is not on the staff allowlist.
-            </p>
-          ) : null}
-          {authError ? <p className="entry-message">{authError}</p> : null}
+      ) : (
+        <SketchCard className="entry-card hero-card sketch-entry-card" elevation={2}>
+          <img src={bbcLogo} alt="Boiler Book Club logo" className="inline-logo inline-logo--heading" />
+          <p className="eyebrow">No Event Is Open</p>
+          <h1>No current event is open right now.</h1>
+          <p className="eyebrow">Please check back soon.</p>
         </SketchCard>
-      ) : null}
+      )}
     </div>
   );
 }

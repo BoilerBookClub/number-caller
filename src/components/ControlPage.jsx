@@ -281,6 +281,11 @@ function EventDetailsModal({
     ? Math.max(0, Math.min(60, parsedMemberCheckInLeadMinutes))
     : 15;
   const memberCheckInLabel = `${memberCheckInLeadMinutes} minute${memberCheckInLeadMinutes === 1 ? "" : "s"}`;
+  const fallbackTitleFont = TITLE_FONT_OPTIONS[0]?.value || "londrina-shadow";
+  const selectedTitleFont = TITLE_FONT_OPTIONS.some((option) => option.value === controlForm.titleFont)
+    ? controlForm.titleFont
+    : fallbackTitleFont;
+  const eventTitleInputClassName = `event-modal-title-input event-title--${selectedTitleFont}`;
 
   return (
     <SketchDialog
@@ -312,6 +317,7 @@ function EventDetailsModal({
               <label className="control-input-group control-input-group--centered">
                 <span>Event Title</span>
                 <SketchInput
+                  className={eventTitleInputClassName}
                   type="text"
                   value={controlForm.title}
                   onChange={onFieldChange("title")}
@@ -323,7 +329,7 @@ function EventDetailsModal({
                 <span>Event Title Font</span>
                 <SketchCombo
                   className="title-font-combo"
-                  selected={controlForm.titleFont}
+                  selected={selectedTitleFont}
                   onChange={onFieldChange("titleFont")}
                 >
                   {TITLE_FONT_OPTIONS.map((option) => (
@@ -334,19 +340,21 @@ function EventDetailsModal({
                 </SketchCombo>
               </label>
             </div>
-            <label className="control-input-group control-input-group--centered">
-              <span>Book List URL</span>
-              <SketchInput
-                type="url"
-                value={controlForm.qrUrl}
-                onChange={onFieldChange("qrUrl")}
-                placeholder="Enter QR code destination"
-              />
+              <label className="control-input-group control-input-group--centered">
+                <span>Book List URL</span>
+                <SketchInput
+                  className="event-modal-default-input"
+                  type="url"
+                  value={controlForm.qrUrl}
+                  onChange={onFieldChange("qrUrl")}
+                  placeholder="Enter QR code destination"
+                />
             </label>
             <div className="time-grid time-grid--centered">
               <label className="control-input-group control-input-group--centered control-input-group--time">
                 <span>Start Time</span>
                 <SketchInput
+                  className="event-modal-default-input"
                   type="time"
                   value={controlForm.timeframeStart}
                   onChange={onFieldChange("timeframeStart")}
@@ -355,6 +363,7 @@ function EventDetailsModal({
               <label className="control-input-group control-input-group--centered control-input-group--time">
                 <span>End Time</span>
                 <SketchInput
+                  className="event-modal-default-input"
                   type="time"
                   value={controlForm.timeframeEnd}
                   onChange={onFieldChange("timeframeEnd")}
@@ -450,32 +459,41 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
           const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
           return (
-            <div key={claim.claimId} className="roster-row" role="listitem">
-              <div className="roster-primary">
-                <strong>#{claim.number}</strong>
-                                <div className="roster-avatar" aria-hidden="true">
-                  {claim.avatarUrl ? (
-                    <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
-                  ) : (
-                    <span className="roster-avatar-fallback">{avatarLabel}</span>
-                  )}
+            <SketchCard
+              key={claim.claimId}
+              className="roster-row roster-row--sketch sketch-entry-card"
+              role="listitem"
+              elevation={1}
+              fill="#fffdf8"
+              strokeColor="#111111"
+            >
+              <div className="roster-row-content">
+                <div className="roster-primary">
+                  <strong>#{claim.number}</strong>
+                  <div className="roster-avatar" aria-hidden="true">
+                    {claim.avatarUrl ? (
+                      <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
+                    ) : (
+                      <span className="roster-avatar-fallback">{avatarLabel}</span>
+                    )}
+                  </div>
+                  <span>{claim.displayName}</span>
                 </div>
-                <span>{claim.displayName}</span>
+                <div className="roster-meta">
+                  <span
+                    className={`roster-badge ${hasClaimedCurrentGroup ? "roster-badge--claimed" : "roster-badge--waiting"}`}
+                  >
+                    {hasClaimedCurrentGroup ? "Claimed" : "Waiting"}
+                  </span>
+                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                  <span
+                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                  >
+                    {claim.isMember ? "Member" : "Not Member"}
+                  </span>
+                </div>
               </div>
-              <div className="roster-meta">
-                <span
-                  className={`roster-badge ${hasClaimedCurrentGroup ? "roster-badge--claimed" : "roster-badge--waiting"}`}
-                >
-                  {hasClaimedCurrentGroup ? "Claimed" : "Waiting"}
-                </span>
-                <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                <span
-                  className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
-                >
-                  {claim.isMember ? "Member" : "Not Member"}
-                </span>
-              </div>
-            </div>
+            </SketchCard>
           );
         })}
       </div>
@@ -498,28 +516,37 @@ function BacklogList({ claims }) {
           const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
           return (
-            <div key={claim.claimId} className="roster-row" role="listitem">
-              <div className="roster-primary">
-                <strong>#{claim.number}</strong>
-                <div className="roster-avatar" aria-hidden="true">
-                  {claim.avatarUrl ? (
-                    <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
-                  ) : (
-                    <span className="roster-avatar-fallback">{avatarLabel}</span>
-                  )}
+            <SketchCard
+              key={claim.claimId}
+              className="roster-row roster-row--sketch sketch-entry-card"
+              role="listitem"
+              elevation={1}
+              fill="#fffdf8"
+              strokeColor="#111111"
+            >
+              <div className="roster-row-content">
+                <div className="roster-primary">
+                  <strong>#{claim.number}</strong>
+                  <div className="roster-avatar" aria-hidden="true">
+                    {claim.avatarUrl ? (
+                      <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
+                    ) : (
+                      <span className="roster-avatar-fallback">{avatarLabel}</span>
+                    )}
+                  </div>
+                  <span>{claim.displayName}</span>
                 </div>
-                <span>{claim.displayName}</span>
+                <div className="roster-meta">
+                  <span className="roster-badge roster-badge--waiting">Waiting</span>
+                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                  <span
+                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                  >
+                    {claim.isMember ? "Member" : "Not Member"}
+                  </span>
+                </div>
               </div>
-              <div className="roster-meta">
-                <span className="roster-badge roster-badge--waiting">Waiting</span>
-                <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                <span
-                  className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
-                >
-                  {claim.isMember ? "Member" : "Not Member"}
-                </span>
-              </div>
-            </div>
+            </SketchCard>
           );
         })}
       </div>
@@ -579,9 +606,9 @@ function GraphModalOverlay({ children, onClose, title }) {
 function TimelineChart({
   emptyText,
   isExpanded = false,
-  note,
   onClose,
   onExpand,
+  showEmptyGraphWhenNoData = false,
   showCloseButton,
   title,
   tone,
@@ -603,6 +630,8 @@ function TimelineChart({
           end: "#2d8f51",
           start: "#63c283",
         };
+  const hasDataPoints = timeline.sortedTimestamps.length > 0;
+  const shouldRenderGraphShell = hasDataPoints || showEmptyGraphWhenNoData;
 
   return (
     <SketchCard
@@ -645,21 +674,36 @@ function TimelineChart({
           </div>
         ) : null}
         <div className="timeline-chart-summary">
-          <div className="graph-summary-card">
+          <SketchCard
+            className="graph-summary-card sketch-entry-card"
+            elevation={1}
+            fill="#ffffff"
+            strokeColor="#111111"
+          >
             <span>{totalLabel}</span>
             <strong>{timeline.sortedTimestamps.length}</strong>
-          </div>
-          <div className="graph-summary-card">
+          </SketchCard>
+          <SketchCard
+            className="graph-summary-card sketch-entry-card"
+            elevation={1}
+            fill="#ffffff"
+            strokeColor="#111111"
+          >
             <span>First Event</span>
             <strong>{formatGraphTimeLabel(timeline.firstTimestampMs)}</strong>
-          </div>
-          <div className="graph-summary-card">
+          </SketchCard>
+          <SketchCard
+            className="graph-summary-card sketch-entry-card"
+            elevation={1}
+            fill="#ffffff"
+            strokeColor="#111111"
+          >
             <span>Time Span</span>
             <strong>{formatGraphWindowLabel(timeline.durationMs)}</strong>
-          </div>
+          </SketchCard>
         </div>
       </div>
-      {timeline.sortedTimestamps.length ? (
+      {shouldRenderGraphShell ? (
         <SketchCard
           className="graph-chart-shell sketch-entry-card"
           elevation={1}
@@ -711,11 +755,11 @@ function TimelineChart({
               y1={GRAPH_CHART_HEIGHT - GRAPH_CHART_PADDING.bottom}
               y2={GRAPH_CHART_HEIGHT - GRAPH_CHART_PADDING.bottom}
             />
-            {timeline.areaPath ? (
+            {hasDataPoints && timeline.areaPath ? (
               <path d={timeline.areaPath} className="graph-area" style={{ fill: `url(#${gradientId})` }} />
             ) : null}
-            {timeline.linePath ? <path d={timeline.linePath} className={lineClassName} /> : null}
-            {timeline.pointCoordinates.slice(1).map((point) => (
+            {hasDataPoints && timeline.linePath ? <path d={timeline.linePath} className={lineClassName} /> : null}
+            {hasDataPoints && timeline.pointCoordinates.slice(1).map((point) => (
               <circle
                 key={`${title}-${point.timeMs}-${point.count}`}
                 className={pointClassName}
@@ -742,14 +786,12 @@ function TimelineChart({
           <strong>{emptyText}</strong>
         </div>
       )}
-      {note ? <p className="graph-inline-note">{note}</p> : null}
     </SketchCard>
   );
 }
 
 function AttendeeGraphsPanel({
   claims,
-  joinedNote,
   joinedTimestamps,
   isItemClaimsVisible,
   isNumberClaimsVisible,
@@ -770,22 +812,6 @@ function AttendeeGraphsPanel({
       return Number.isFinite(claim.redeemedAtMs) ? [claim.redeemedAtMs] : [];
     })
     .filter((timestampMs) => Number.isFinite(timestampMs));
-  const untimestampedItemClaimCount = claims.reduce((missingCount, claim) => {
-    const historyCount = claim.itemClaimedAtMsHistory.length;
-
-    if (historyCount > 0) {
-      return missingCount + Math.max(0, claim.itemsClaimedCount - historyCount);
-    }
-
-    if (claim.itemsClaimedCount > 0 && Number.isFinite(claim.redeemedAtMs)) {
-      return missingCount + Math.max(0, claim.itemsClaimedCount - 1);
-    }
-
-    return missingCount + Math.max(0, claim.itemsClaimedCount);
-  }, 0);
-  const itemClaimNote = untimestampedItemClaimCount > 0
-    ? `${untimestampedItemClaimCount} older item claim${untimestampedItemClaimCount === 1 ? " is" : "s are"} missing timestamps and excluded from this chart.`
-    : "";
 
   const shouldShowChartCloseButtons = isNumberClaimsVisible && isItemClaimsVisible;
 
@@ -818,9 +844,9 @@ function AttendeeGraphsPanel({
       {isNumberClaimsVisible ? (
         <TimelineChart
           emptyText="No timestamped joins yet."
-          note={joinedNote}
           onExpand={onExpandNumberClaims}
           onClose={onHideNumberClaims}
+          showEmptyGraphWhenNoData
           showCloseButton={shouldShowChartCloseButtons}
           timestamps={joinedTimestamps}
           title="Joined"
@@ -831,9 +857,9 @@ function AttendeeGraphsPanel({
       {isItemClaimsVisible ? (
         <TimelineChart
           emptyText="No timestamped item claims yet."
-          note={itemClaimNote}
           onExpand={onExpandItemClaims}
           onClose={onHideItemClaims}
+          showEmptyGraphWhenNoData
           showCloseButton={shouldShowChartCloseButtons}
           timestamps={itemClaimTimestamps}
           title="Item Claims"
@@ -870,9 +896,6 @@ function FullRoster({
     preclaims,
   });
   const joinedTimestamps = joinedTimeline.timestamps;
-  const joinedNote = joinedTimeline.missingCount > 0
-    ? `${joinedTimeline.missingCount} attendee join${joinedTimeline.missingCount === 1 ? " is" : "s are"} missing a timestamp and excluded from this chart.`
-    : "";
 
   useEffect(() => {
     if (isGraphOpen) {
@@ -905,7 +928,7 @@ function FullRoster({
     expandedGraphTone === "claims"
       ? {
           emptyText: "No timestamped joins yet.",
-          note: joinedNote,
+          showEmptyGraphWhenNoData: true,
           timestamps: joinedTimestamps,
           title: "Joined",
           tone: "claims",
@@ -914,45 +937,6 @@ function FullRoster({
       : expandedGraphTone === "items"
         ? {
             emptyText: "No timestamped item claims yet.",
-            note: claims.reduce((missingCount, claim) => {
-              const historyCount = claim.itemClaimedAtMsHistory.length;
-
-              if (historyCount > 0) {
-                return missingCount + Math.max(0, claim.itemsClaimedCount - historyCount);
-              }
-
-              if (claim.itemsClaimedCount > 0 && Number.isFinite(claim.redeemedAtMs)) {
-                return missingCount + Math.max(0, claim.itemsClaimedCount - 1);
-              }
-
-              return missingCount + Math.max(0, claim.itemsClaimedCount);
-            }, 0)
-              ? `${claims.reduce((missingCount, claim) => {
-                  const historyCount = claim.itemClaimedAtMsHistory.length;
-
-                  if (historyCount > 0) {
-                    return missingCount + Math.max(0, claim.itemsClaimedCount - historyCount);
-                  }
-
-                  if (claim.itemsClaimedCount > 0 && Number.isFinite(claim.redeemedAtMs)) {
-                    return missingCount + Math.max(0, claim.itemsClaimedCount - 1);
-                  }
-
-                  return missingCount + Math.max(0, claim.itemsClaimedCount);
-                }, 0)} older item claim${claims.reduce((missingCount, claim) => {
-                  const historyCount = claim.itemClaimedAtMsHistory.length;
-
-                  if (historyCount > 0) {
-                    return missingCount + Math.max(0, claim.itemsClaimedCount - historyCount);
-                  }
-
-                  if (claim.itemsClaimedCount > 0 && Number.isFinite(claim.redeemedAtMs)) {
-                    return missingCount + Math.max(0, claim.itemsClaimedCount - 1);
-                  }
-
-                  return missingCount + Math.max(0, claim.itemsClaimedCount);
-                }, 0) === 1 ? " is" : "s are"} missing timestamps and excluded from this chart.`
-              : "",
             timestamps: claims
               .flatMap((claim) => {
                 if (claim.itemClaimedAtMsHistory.length > 0) {
@@ -962,6 +946,7 @@ function FullRoster({
                 return Number.isFinite(claim.redeemedAtMs) ? [claim.redeemedAtMs] : [];
               })
               .filter((timestampMs) => Number.isFinite(timestampMs)),
+            showEmptyGraphWhenNoData: true,
             title: "Item Claims",
             tone: "items",
             totalLabel: "Items",
@@ -1056,7 +1041,6 @@ function FullRoster({
         {isGraphPanelMounted ? (
           <AttendeeGraphsPanel
             claims={claims}
-            joinedNote={joinedNote}
             joinedTimestamps={joinedTimestamps}
             isItemClaimsVisible={isItemClaimsVisible}
             isNumberClaimsVisible={isNumberClaimsVisible}
@@ -1076,82 +1060,91 @@ function FullRoster({
             const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
             return (
-              <div key={claim.claimId} className="roster-row" role="listitem">
-                <div className="roster-primary">
-                  <strong>#{claim.number}</strong>
-                                    <div className="roster-avatar" aria-hidden="true">
-                    {claim.avatarUrl ? (
-                      <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
-                    ) : (
-                      <span className="roster-avatar-fallback">{avatarLabel}</span>
-                    )}
+              <SketchCard
+                key={claim.claimId}
+                className="roster-row roster-row--sketch sketch-entry-card"
+                role="listitem"
+                elevation={1}
+                fill="#fffdf8"
+                strokeColor="#111111"
+              >
+                <div className="roster-row-content">
+                  <div className="roster-primary">
+                    <strong>#{claim.number}</strong>
+                    <div className="roster-avatar" aria-hidden="true">
+                      {claim.avatarUrl ? (
+                        <img src={claim.avatarUrl} alt="" className="roster-avatar-image" />
+                      ) : (
+                        <span className="roster-avatar-fallback">{avatarLabel}</span>
+                      )}
+                    </div>
+                    <span>{claim.displayName}</span>
                   </div>
-                  <span>{claim.displayName}</span>
-                </div>
-                <div className="roster-meta">
-                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                  <span
-                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
-                  >
-                    {claim.isMember ? "Member" : "Not Member"}
-                  </span>
-                  {showPreclaimQueue ? (
-                    <SketchButton
+                  <div className="roster-meta">
+                    <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
+                    <span
+                      className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                    >
+                      {claim.isMember ? "Member" : "Not Member"}
+                    </span>
+                    {showPreclaimQueue ? (
+                      <SketchButton
+                        type="button"
+                        className="secondary-button roster-inline-action"
+                        onClick={() => {
+                          if (!onMoveClaimBackToQueueAsStaff) return;
+                          const confirmMsg = `Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue?`;
+                          const handleMoveToQueue = () => onMoveClaimBackToQueueAsStaff(claim.claimId);
+
+                          if (typeof onRequestConfirmation === "function") {
+                            onRequestConfirmation({
+                              confirmLabel: "Move to Queue",
+                              message: confirmMsg,
+                              onConfirm: handleMoveToQueue,
+                              title: "Move attendee back to queue?",
+                              tone: "default",
+                            });
+                            return;
+                          }
+
+                          void handleMoveToQueue();
+                        }}
+                        disabled={!onMoveClaimBackToQueueAsStaff}
+                        title="Move back to queue"
+                        aria-label={`Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue`}
+                      >
+                        Queue
+                      </SketchButton>
+                    ) : null}
+                    <SketchIconButton
                       type="button"
-                      className="secondary-button roster-inline-action"
+                      className="roster-remove-button"
                       onClick={() => {
-                        if (!onMoveClaimBackToQueueAsStaff) return;
-                        const confirmMsg = `Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue?`;
-                        const handleMoveToQueue = () => onMoveClaimBackToQueueAsStaff(claim.claimId);
+                        if (!onRemoveClaim) return;
+                        const confirmMsg = `Remove ${claim.displayName || 'attendee'} (#${claim.number})?`;
+                        const handleRemoveClaim = () => onRemoveClaim(claim.claimId);
 
                         if (typeof onRequestConfirmation === "function") {
                           onRequestConfirmation({
-                            confirmLabel: "Move to Queue",
+                            confirmLabel: "Remove",
                             message: confirmMsg,
-                            onConfirm: handleMoveToQueue,
-                            title: "Move attendee back to queue?",
-                            tone: "default",
+                            onConfirm: handleRemoveClaim,
+                            title: "Remove attendee?",
+                            tone: "danger",
                           });
                           return;
                         }
 
-                        void handleMoveToQueue();
+                        void handleRemoveClaim();
                       }}
-                      disabled={!onMoveClaimBackToQueueAsStaff}
-                      title="Move back to queue"
-                      aria-label={`Move ${claim.displayName || "attendee"} (#${claim.number}) back to queue`}
+                      title="Remove number"
+                      aria-label={`Remove ${claim.displayName || 'attendee'} (#${claim.number})`}
                     >
-                      Queue
-                    </SketchButton>
-                  ) : null}
-                  <SketchIconButton
-                    type="button"
-                    className="roster-remove-button"
-                    onClick={() => {
-                      if (!onRemoveClaim) return;
-                      const confirmMsg = `Remove ${claim.displayName || 'attendee'} (#${claim.number})?`;
-                      const handleRemoveClaim = () => onRemoveClaim(claim.claimId);
-
-                      if (typeof onRequestConfirmation === "function") {
-                        onRequestConfirmation({
-                          confirmLabel: "Remove",
-                          message: confirmMsg,
-                          onConfirm: handleRemoveClaim,
-                          title: "Remove attendee?",
-                          tone: "danger",
-                        });
-                        return;
-                      }
-
-                      void handleRemoveClaim();
-                    }}
-                    title="Remove number"
-                    aria-label={`Remove ${claim.displayName || 'attendee'} (#${claim.number})`}
-                  >
-                    ×
-                  </SketchIconButton>
+                      ×
+                    </SketchIconButton>
+                  </div>
                 </div>
-              </div>
+              </SketchCard>
             );
           })}
         </div>
@@ -1189,90 +1182,99 @@ function FullRoster({
                 const avatarLabel = queuedAttendee.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
                 const isRefreshingCurrentPreclaim = refreshingPreclaimIds.has(queuedAttendee.preclaimId);
                 return (
-                  <div key={queuedAttendee.preclaimId} className="roster-row" role="listitem">
-                    <div className="roster-primary">
-                      <strong>#{queuedAttendee.projectedNumber}</strong>
-                      <div className="roster-avatar" aria-hidden="true">
-                        {queuedAttendee.avatarUrl ? (
-                          <img src={queuedAttendee.avatarUrl} alt="" className="roster-avatar-image" />
-                        ) : (
-                          <span className="roster-avatar-fallback">{avatarLabel}</span>
-                        )}
+                  <SketchCard
+                    key={queuedAttendee.preclaimId}
+                    className="roster-row roster-row--sketch sketch-entry-card"
+                    role="listitem"
+                    elevation={1}
+                    fill="#fffdf8"
+                    strokeColor="#111111"
+                  >
+                    <div className="roster-row-content">
+                      <div className="roster-primary">
+                        <strong>#{queuedAttendee.projectedNumber}</strong>
+                        <div className="roster-avatar" aria-hidden="true">
+                          {queuedAttendee.avatarUrl ? (
+                            <img src={queuedAttendee.avatarUrl} alt="" className="roster-avatar-image" />
+                          ) : (
+                            <span className="roster-avatar-fallback">{avatarLabel}</span>
+                          )}
+                        </div>
+                        <span>{queuedAttendee.displayName || "Unknown attendee"}</span>
                       </div>
-                      <span>{queuedAttendee.displayName || "Unknown attendee"}</span>
-                    </div>
-                    <div className="roster-meta">
-                      <span className="roster-badge roster-badge--waiting">Queue {queueIndex + 1}</span>
-                      <span
-                        className={`roster-badge ${queuedAttendee.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
-                      >
-                        {queuedAttendee.isMember ? "Member" : "Not Member"}
-                      </span>
-                      <SketchButton
-                        type="button"
-                        className="secondary-button roster-inline-action"
-                        onClick={() => {
-                          if (!onAssignPreclaimAsStaff) return;
-                          void onAssignPreclaimAsStaff(queuedAttendee.preclaimId);
-                        }}
-                        title={`Assign number ${queuedAttendee.projectedNumber}`}
-                        aria-label={`Assign number ${queuedAttendee.projectedNumber} to ${queuedAttendee.displayName || "attendee"}`}
-                      >
-                        Assign Early
-                      </SketchButton>
-                      <SketchButton
-                        type="button"
-                        className="secondary-button roster-inline-action"
-                        onClick={() => {
-                          if (!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim) return;
-                          setRefreshingPreclaimIds((currentIds) => {
-                            const nextIds = new Set(currentIds);
-                            nextIds.add(queuedAttendee.preclaimId);
-                            return nextIds;
-                          });
-                          void onRefreshPreclaimMembershipAsStaff(queuedAttendee.preclaimId).finally(() => {
+                      <div className="roster-meta">
+                        <span className="roster-badge roster-badge--waiting">Queue {queueIndex + 1}</span>
+                        <span
+                          className={`roster-badge ${queuedAttendee.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                        >
+                          {queuedAttendee.isMember ? "Member" : "Not Member"}
+                        </span>
+                        <SketchButton
+                          type="button"
+                          className="secondary-button roster-inline-action"
+                          onClick={() => {
+                            if (!onAssignPreclaimAsStaff) return;
+                            void onAssignPreclaimAsStaff(queuedAttendee.preclaimId);
+                          }}
+                          title={`Assign number ${queuedAttendee.projectedNumber}`}
+                          aria-label={`Assign number ${queuedAttendee.projectedNumber} to ${queuedAttendee.displayName || "attendee"}`}
+                        >
+                          Assign Early
+                        </SketchButton>
+                        <SketchButton
+                          type="button"
+                          className="secondary-button roster-inline-action"
+                          onClick={() => {
+                            if (!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim) return;
                             setRefreshingPreclaimIds((currentIds) => {
                               const nextIds = new Set(currentIds);
-                              nextIds.delete(queuedAttendee.preclaimId);
+                              nextIds.add(queuedAttendee.preclaimId);
                               return nextIds;
                             });
-                          });
-                        }}
-                        disabled={!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim}
-                        title="Refresh membership"
-                        aria-label={`Refresh membership for ${queuedAttendee.displayName || "attendee"}`}
-                      >
-                        {isRefreshingCurrentPreclaim ? "..." : "Refresh"}
-                      </SketchButton>
-                      <SketchIconButton
-                        type="button"
-                        className="roster-remove-button"
-                        onClick={() => {
-                          if (!onRemovePreclaimAsStaff) return;
-                          const confirmMsg = `Remove ${queuedAttendee.displayName || "attendee"} from queue? This logs them out.`;
-                          const handleRemovePreclaim = () =>
-                            onRemovePreclaimAsStaff(queuedAttendee.preclaimId);
-
-                          if (typeof onRequestConfirmation === "function") {
-                            onRequestConfirmation({
-                              confirmLabel: "Remove",
-                              message: confirmMsg,
-                              onConfirm: handleRemovePreclaim,
-                              title: "Remove attendee from queue?",
-                              tone: "danger",
+                            void onRefreshPreclaimMembershipAsStaff(queuedAttendee.preclaimId).finally(() => {
+                              setRefreshingPreclaimIds((currentIds) => {
+                                const nextIds = new Set(currentIds);
+                                nextIds.delete(queuedAttendee.preclaimId);
+                                return nextIds;
+                              });
                             });
-                            return;
-                          }
+                          }}
+                          disabled={!onRefreshPreclaimMembershipAsStaff || isRefreshingCurrentPreclaim}
+                          title="Refresh membership"
+                          aria-label={`Refresh membership for ${queuedAttendee.displayName || "attendee"}`}
+                        >
+                          {isRefreshingCurrentPreclaim ? "..." : "Refresh"}
+                        </SketchButton>
+                        <SketchIconButton
+                          type="button"
+                          className="roster-remove-button"
+                          onClick={() => {
+                            if (!onRemovePreclaimAsStaff) return;
+                            const confirmMsg = `Remove ${queuedAttendee.displayName || "attendee"} from queue? This logs them out.`;
+                            const handleRemovePreclaim = () =>
+                              onRemovePreclaimAsStaff(queuedAttendee.preclaimId);
 
-                          void handleRemovePreclaim();
-                        }}
-                        title="Remove from queue"
-                        aria-label={`Remove ${queuedAttendee.displayName || "attendee"} from queue`}
-                      >
-                        ×
-                      </SketchIconButton>
+                            if (typeof onRequestConfirmation === "function") {
+                              onRequestConfirmation({
+                                confirmLabel: "Remove",
+                                message: confirmMsg,
+                                onConfirm: handleRemovePreclaim,
+                                title: "Remove attendee from queue?",
+                                tone: "danger",
+                              });
+                              return;
+                            }
+
+                            void handleRemovePreclaim();
+                          }}
+                          title="Remove from queue"
+                          aria-label={`Remove ${queuedAttendee.displayName || "attendee"} from queue`}
+                        >
+                          ×
+                        </SketchIconButton>
+                      </div>
                     </div>
-                  </div>
+                  </SketchCard>
                 );
               })}
             </div>
@@ -1286,7 +1288,7 @@ function FullRoster({
           <TimelineChart
             emptyText={expandedGraphConfig.emptyText}
             isExpanded
-            note={expandedGraphConfig.note}
+            showEmptyGraphWhenNoData={expandedGraphConfig.showEmptyGraphWhenNoData}
             showCloseButton={false}
             title={expandedGraphConfig.title}
             tone={expandedGraphConfig.tone}

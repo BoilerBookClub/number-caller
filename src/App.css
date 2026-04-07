@@ -92,6 +92,8 @@ body.modal-scroll-locked {
 
 .display-header-group .eyebrow {
   margin: 0;
+  font-size: clamp(1.2rem, 2.4vw, 2rem);
+  line-height: 1.1;
 }
 
 .display-call-block {
@@ -1233,6 +1235,24 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   text-align: left;
 }
 
+.roster-row--sketch {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  box-sizing: border-box;
+  overflow: visible !important;
+}
+
+.roster-row-content {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  text-align: left;
+}
+
 .roster-primary,
 .roster-meta {
   display: flex;
@@ -1255,6 +1275,8 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
 
 .roster-meta {
   flex: 0 1 auto;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .roster-avatar {
@@ -1481,6 +1503,14 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   min-width: 0;
 }
 
+.timeline-chart-card.sketch-entry-card,
+.graph-chart-shell.sketch-entry-card {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible !important;
+}
+
 .timeline-chart-header {
   display: grid;
   gap: 0.65rem;
@@ -1569,6 +1599,13 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   min-width: 0;
 }
 
+.graph-summary-card.sketch-entry-card {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible !important;
+}
+
 .graph-summary-card span {
   font-size: 0.55rem;
   font-weight: 800;
@@ -1588,6 +1625,12 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   border-radius: 18px;
   background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
   padding: 0.65rem;
+}
+
+wired-card.timeline-chart-card.sketch-entry-card,
+wired-card.graph-summary-card.sketch-entry-card,
+wired-card.graph-chart-shell.sketch-entry-card {
+  overflow: visible !important;
 }
 
 .graph-chart {
@@ -1770,6 +1813,7 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   width: 100%;
   max-width: 100%;
   overflow-x: clip;
+  margin-bottom: 1rem;
 }
 
 .event-modal {
@@ -1841,6 +1885,17 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   gap: 0.85rem;
   align-items: end;
   margin-bottom: 0.85rem;
+}
+
+.event-modal-form .title-grid .event-modal-title-input {
+  width: 100%;
+  min-height: 3.2rem;
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.event-modal-form .event-modal-default-input {
+  font-family: "Caveat", cursive;
 }
 
 .event-modal-form .title-font-select select {
@@ -2960,15 +3015,19 @@ button.ready-button:hover:not(:disabled) {
 .display-feed-copy {
   width: 100%;
   min-width: 0;
-  max-width: 15rem;
+  max-width: 20rem;
+  font-size: clamp(1.15rem, 2.1vw, 1.8rem);
+  line-height: 1.15;
 }
 
 .display-feed-copy strong {
   font-weight: 900;
+  font-synthesis: weight;
 }
 
 .display-feed-name {
   font-weight: 900;
+  font-synthesis: weight;
 }
 
 .display-feed-name--member {
@@ -3153,6 +3212,11 @@ li {
   .event-modal-form .control-input-group select {
     padding: 0.75rem 0.85rem;
     font-size: 0.98rem;
+  }
+
+  .event-modal-form .title-grid .event-modal-title-input {
+    min-height: 3rem;
+    font-size: 1.2rem;
   }
 
   .event-modal-form .time-grid--centered {
@@ -3340,6 +3404,11 @@ li {
     max-width: none;
   }
 
+  .display-feed-copy {
+    max-width: 100%;
+    font-size: clamp(1rem, 4.4vw, 1.45rem);
+  }
+
   .qr-claim-copy {
     flex: 0 0 15rem;
     width: 15rem;
@@ -3377,7 +3446,8 @@ li {
     max-width: 16rem;
   }
 
-  .roster-row {
+  .roster-row,
+  .roster-row-content {
     gap: 0.65rem;
   }
 
@@ -3492,6 +3562,11 @@ li {
     padding: 0.68rem 0.78rem;
     font-size: 0.95rem;
     border-radius: 9px;
+  }
+
+  .event-modal-form .title-grid .event-modal-title-input {
+    min-height: 2.85rem;
+    font-size: 1.1rem;
   }
 
   .event-modal-form .control-input-hint {

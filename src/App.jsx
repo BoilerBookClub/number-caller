@@ -1259,7 +1259,6 @@ function App() {
   // If staff remove someone from queue, force a logout on the attendee side.
   useEffect(() => {
     let cancelled = false;
-    const hadQueuedPreclaimAtMount = claimPreclaim?.eventId === liveEvent.eventId;
 
     if (!attendeeClaimId || !loggedIn || !liveEvent.eventId) {
       setClaimPreclaim(null);
@@ -1270,10 +1269,6 @@ function App() {
     if (claimRecord && claimRecord.claimId === attendeeClaimId) {
       setClaimPreclaim(null);
       return undefined;
-    }
-
-    if (hadQueuedPreclaimAtMount) {
-      hasObservedQueuedPreclaimRef.current = true;
     }
 
     const forceLogoutIfUnassigned = async () => {
@@ -1329,8 +1324,7 @@ function App() {
           errorCode === "permission_denied" ||
           errorCode === "firestore/permission-denied";
 
-        const hadQueuedPresence =
-          hasObservedQueuedPreclaimRef.current || hadQueuedPreclaimAtMount;
+        const hadQueuedPresence = hasObservedQueuedPreclaimRef.current;
 
         if (isPermissionDenied && hadQueuedPresence && !hasProcessedPreclaimRemovalRef.current) {
           hasProcessedPreclaimRemovalRef.current = true;
@@ -1341,7 +1335,7 @@ function App() {
         console.error(error.message || "Unable to sync queued attendee.");
       },
     });
-  }, [attendeeClaimId, claimPreclaim, claimRecord, handleLogout, liveEvent.eventId, loggedIn]);
+  }, [attendeeClaimId, claimRecord, handleLogout, liveEvent.eventId, loggedIn]);
 
   useEffect(() => {
     const hasAssignedClaimForCurrentEvent =
@@ -2569,14 +2563,7 @@ function App() {
   ) {
     return (
       <ClosedEventPage
-        authError={authError}
         endedEventTitle={mode === null ? endedEventTitle : ""}
-        handleLogout={handleLogout}
-        hasFullAccess={hasFullAccess}
-        isCheckingAccess={isCheckingAccess}
-        loggedIn={loggedIn}
-        onOpenControl={() => changeMode("control")}
-        onStartOAuthGrant={() => startOAuthGrant("/control")}
       />
     );
   }
