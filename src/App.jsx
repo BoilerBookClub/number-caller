@@ -7,6 +7,7 @@ import {
   ClosedEventPage,
   ControlAccessDenied,
 } from "./components/EntryPages";
+import { DEFAULT_CLAIM_RULES_TEXT, normalizeClaimRulesText } from "./claimRules";
 import {
   buildClaimAccessCode,
   CLAIM_ACCESS_GRANT_MS,
@@ -14,7 +15,7 @@ import {
   createClaimAccessSecret,
   isValidClaimAccessCode,
 } from "./claimAccess";
-  import { enqueuePreclaim } from "./firebase";
+import { enqueuePreclaim } from "./firebase";
 import { buildClaimQrPayload, parseClaimQrPayload } from "./claimQr";
 import {
   claimEventNumber,
@@ -57,6 +58,7 @@ const DEFAULT_GROUP_SIZE = 10;
 const initialState = {
   title: "BOILER BOOK CLUB EVENT",
   titleFont: DEFAULT_TITLE_FONT,
+  claimRulesText: DEFAULT_CLAIM_RULES_TEXT,
   qrUrl: defaultQrUrl,
   autoAdvanceEnabled: false,
   autoAdvanceBacklogLimitEnabled: false,
@@ -80,6 +82,7 @@ const initialState = {
 const initialControlForm = {
   title: "",
   titleFont: initialState.titleFont,
+  claimRulesText: initialState.claimRulesText,
   qrUrl: initialState.qrUrl,
   memberCheckInLeadMinutes: String(initialState.memberCheckInLeadMinutes),
   timeframeStart: "19:00",
@@ -161,9 +164,21 @@ const normalizeState = (nextState) => {
     mergedState.autoAdvanceBacklogLimit,
   );
   const normalizedGroupSize = normalizeGroupSize(mergedState.groupSize);
+  const normalizedTitle =
+    typeof mergedState.title === "string" && mergedState.title.trim()
+      ? mergedState.title
+      : initialState.title;
+  const normalizedQrUrl =
+    typeof mergedState.qrUrl === "string" ? mergedState.qrUrl : initialState.qrUrl;
+  const normalizedFinalCallTargetClaimIds = Array.isArray(mergedState.finalCallTargetClaimIds)
+    ? mergedState.finalCallTargetClaimIds.filter((claimId) => typeof claimId === "string")
+    : initialState.finalCallTargetClaimIds;
 
   return {
-    ...mergedState,
+    title: normalizedTitle,
+    titleFont: normalizeTitleFont(mergedState.titleFont),
+    claimRulesText: normalizeClaimRulesText(mergedState.claimRulesText),
+    qrUrl: normalizedQrUrl,
     autoAdvanceEnabled:
       typeof mergedState.autoAdvanceEnabled === "boolean"
         ? mergedState.autoAdvanceEnabled
@@ -191,10 +206,19 @@ const normalizeState = (nextState) => {
         ? mergedState.autoAdvanceStartRound
         : initialState.autoAdvanceStartRound,
     autoAdvanceThresholdPercent: normalizedThreshold,
-      groupSize: normalizedGroupSize,
+    groupSize: normalizedGroupSize,
+    memberCheckInLeadMinutes: normalizeMemberCheckInLeadMinutes(
+      mergedState.memberCheckInLeadMinutes,
+    ),
     current: normalizeNonNegativeInteger(mergedState.current, initialState.current),
+    groupStartedAt: mergedState.groupStartedAt ?? initialState.groupStartedAt,
     last: normalizeNonNegativeInteger(mergedState.last, initialState.last),
     round: normalizeNonNegativeInteger(mergedState.round, initialState.round),
+    finalCall:
+      typeof mergedState.finalCall === "boolean"
+        ? mergedState.finalCall
+        : initialState.finalCall,
+    finalCallTargetClaimIds: normalizedFinalCallTargetClaimIds,
   };
 };
 
@@ -1053,6 +1077,7 @@ function App() {
     }
 
     setControlForm({
+      claimRulesText: normalizeClaimRulesText(liveState.claimRulesText),
       qrUrl: liveState.qrUrl,
       memberCheckInLeadMinutes: String(
         normalizeMemberCheckInLeadMinutes(liveState.memberCheckInLeadMinutes),
@@ -1067,6 +1092,7 @@ function App() {
     isEventLive,
     liveEvent.timeframeEnd,
     liveEvent.timeframeStart,
+    liveState.claimRulesText,
     liveState.memberCheckInLeadMinutes,
     liveState.qrUrl,
     liveState.title,
@@ -2327,6 +2353,7 @@ function App() {
       memberCheckInLeadMinutes: normalizeMemberCheckInLeadMinutes(
         controlForm.memberCheckInLeadMinutes,
       ),
+      claimRulesText: normalizeClaimRulesText(controlForm.claimRulesText),
       qrUrl: controlForm.qrUrl.trim() || defaultQrUrl,
       title: controlForm.title.trim() || initialState.title,
       titleFont: normalizeTitleFont(controlForm.titleFont),

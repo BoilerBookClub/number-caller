@@ -17,15 +17,28 @@ button.ready-button:focus, button.ready-button:focus-visible, button.ready-butto
   }
 }
 @media (max-width: 550px) {
-  .bottom-navbar-button span {
-    display: none;
+  .bottom-navbar {
+    padding: 0.6rem;
+  }
+
+  .bottom-navbar-row {
+    gap: 0.4rem;
+  }
+
+  .bottom-navbar-button {
+    padding: 0.7rem 0.55rem;
+    font-size: 0.9rem;
+  }
+
+  .bottom-navbar-content {
+    gap: 0.45rem;
   }
 }
 #root {
   width: 100%;
   max-width: 58rem;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 0;
   text-align: center;
 }
 
@@ -54,12 +67,30 @@ body.modal-scroll-locked {
   overflow: hidden;
 }
 
+#root:has(.claim-page) {
+  min-height: 100vh;
+  padding: 0;
+  align-self: stretch;
+}
+
 .mode-select,
 .control,
 .display,
 .claim-page {
   text-align: center;
   padding: 2rem;
+}
+
+.claim-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.claim-page--focused {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .display {
@@ -124,6 +155,7 @@ body.modal-scroll-locked {
 
 .control {
   width: 100%;
+  padding: 0;
   padding-bottom: 7rem;
 }
 
@@ -376,11 +408,11 @@ wired-button.secondary-button.claim-corner-button--active .button-icon {
 .claim-rules-modal {
   display: flex;
   flex-direction: column;
-  width: calc(100vw - 10px);
-  height: calc(100dvh - 10px);
-  max-width: calc(100vw - 10px);
-  max-height: calc(100dvh - 10px);
-  border-radius: 0;
+  width: min(92vw, 44rem);
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  margin: 1rem auto;
+  border-radius: 18px;
   background-color: transparent;
   border: none;
   box-shadow: none;
@@ -425,6 +457,11 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
   overflow: visible !important;
 }
 
+/* Allow attendee filter dropdown menus to extend beyond card bounds. */
+wired-card.roster-card.sketch-entry-card {
+  overflow: visible !important;
+}
+
 .claim-rules-modal.sketch-modal-card,
 .scanner-modal-card.sketch-modal-card,
 .graph-expand-modal.sketch-modal-card {
@@ -434,15 +471,25 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 }
 
 .claim-rules-content {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
-  max-width: 45rem;
-  margin: 0 auto;
-  padding: 1.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
   text-align: left;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  .claim-rules-modal {
+    width: calc(100vw - 1.5rem);
+    max-width: calc(100vw - 1.5rem);
+    max-height: calc(100dvh - 1.5rem);
+    margin: 0.75rem auto;
+  }
 }
 
 .claim-rules-copy {
@@ -512,6 +559,13 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
   box-shadow: #34343414 0 6px 18px;
 }
 
+.claim-qr-box {
+  border: none !important;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none !important;
+}
+
 .scanner-card {
   max-width: 42rem;
   margin-left: auto;
@@ -521,17 +575,16 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 .roster-card {
   margin-left: auto;
   margin-right: auto;
-  max-height: min(70vh, 36rem);
+  max-height: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
   position: relative;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .roster-card--with-graphs {
   max-width: 72rem;
-  max-height: min(88vh, 60rem);
 }
 
 .roster-card-header {
@@ -572,11 +625,83 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
   text-align: center;
 }
 
+.roster-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 12.5rem) minmax(10rem, 12.5rem);
+  gap: 0.55rem;
+  margin: 0 0 0.85rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  --roster-filter-search-height: 3rem;
+  --roster-filter-combo-height: 2.8rem;
+}
+
+.roster-filter-row > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.roster-filter-search,
+.roster-filter-combo {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  justify-self: stretch;
+  align-self: stretch;
+  text-align: left;
+  font-family: inherit;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.roster-filter-search,
+wired-search-input.roster-filter-search {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  height: var(--roster-filter-search-height) !important;
+  min-height: var(--roster-filter-search-height) !important;
+  max-height: var(--roster-filter-search-height) !important;
+}
+
+.roster-filter-combo,
+wired-combo.roster-filter-combo {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  height: var(--roster-filter-combo-height) !important;
+  min-height: var(--roster-filter-combo-height) !important;
+  max-height: var(--roster-filter-combo-height) !important;
+}
+
+.roster-filter-combo {
+  position: relative;
+  z-index: 7;
+}
+
+.roster-filter-empty {
+  margin: 0.35rem 0 0;
+  color: #5a5a5a;
+  text-align: center;
+}
+
 .roster-list--attendees {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
+  max-height: 72rem;
   overflow-y: auto;
   padding-right: 0.35rem;
+}
+
+/* Keep roster header/graphs fixed while attendee rows are the scroll surface. */
+.roster-card--with-graphs .roster-list--attendees {
+  max-height: 64rem;
 }
 
 .roster-list--queue {
@@ -594,15 +719,15 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 .queue-card {
   margin-left: auto;
   margin-right: auto;
-  max-height: min(84vh, 52rem);
+  max-height: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .queue-card--settings-open {
-  max-height: min(92vh, 66rem);
+  max-height: none;
 }
 
 .queue-card-sticky-top {
@@ -613,11 +738,20 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 }
 
 .queue-card-body {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
+  overflow: visible;
+}
+
+/* Keep controls/summary fixed while only the attendee list scrolls. */
+.queue-card-body .roster-list--group {
+  max-height: 40rem;
   overflow-y: auto;
-  overflow-x: hidden;
   overscroll-behavior: contain;
+}
+
+.control-dashboard {
+  padding-top: 1rem;
 }
 
 .control-event-header {
@@ -673,7 +807,9 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 .control-event-subtitle {
   margin: 0.35rem 0;
   color: #5a5a5a;
-  font-size: 1rem;
+  font-size: clamp(1.2rem, 2.2vw, 1.5rem);
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .control-event-link {
@@ -718,16 +854,17 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 .queue-summary-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
   gap: 0.2rem;
   padding: 0.8rem 0.95rem;
-  border: 1px solid #e4e4e4;
-  border-radius: 16px;
-  background: #fffdf8;
   text-align: left;
 }
 
 .queue-summary-card span {
+  align-self: flex-start;
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -736,17 +873,28 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 }
 
 .queue-summary-card strong {
+  align-self: flex-start;
   font-size: 1rem;
   color: #24303d;
 }
 
 .queue-summary-progress {
+  display: block;
+  align-self: stretch;
   width: 100%;
+  min-width: 0;
   margin-top: 0.35rem;
   --wired-progress-color: rgba(123, 82, 0, 0.88);
   --wired-progress-label-color: transparent;
   --wired-progress-label-background: transparent;
   --wired-progress-font-size: 0px;
+}
+
+wired-progress.queue-summary-progress {
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
 }
 
 .queue-summary-card--alert {
@@ -756,11 +904,6 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
 
 .queue-summary-card--alert strong {
   color: #7b5200;
-}
-
-.queue-summary-card--complete {
-  background: #e6f7ea;
-  border-color: #9bd3ab;
 }
 
 .queue-summary-card--complete span,
@@ -782,15 +925,20 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;
+  isolation: isolate;
 }
 .spinner-ring {
   position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  box-sizing: border-box;
-  border: 6px solid rgba(0,0,0,0.08);
-  border-top-color: rgba(0,0,0,0.9);
-  animation: spin 900ms linear infinite;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+  display: block;
+  margin: 0;
+  padding: 0;
+  color: rgba(0, 0, 0, 0.9);
 }
 .spinner-logo {
   position: relative;
@@ -800,11 +948,6 @@ wired-card.queue-auto-advance-setting-card.sketch-entry-card {
   z-index: 1;
   border-radius: 50%;
   background: transparent;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .queue-corner-actions {
@@ -1233,7 +1376,7 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: .4rem 1rem;
+  padding: 0.5rem 1rem;
   border: 1px solid #e4e4e4;
   border-radius: 16px;
   background: #fffdf8;
@@ -1241,7 +1384,9 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
 }
 
 .roster-row--sketch {
+  display: block !important;
   width: 100%;
+  min-width: 0;
   border: none;
   background: transparent;
   border-radius: 0;
@@ -1249,12 +1394,22 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   overflow: visible !important;
 }
 
+.roster-row--claimed {
+  --sketch-fill-color: #e6f7ea !important;
+  background: #e6f7ea !important;
+}
+
+.roster-row--claimed .roster-row-content {
+  background: #e6f7ea;
+}
+
 .roster-row-content {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
   gap: 1rem;
   width: 100%;
+  min-width: 0;
   text-align: left;
 }
 
@@ -1269,6 +1424,7 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
 .roster-primary {
   flex: 1 1 auto;
   min-width: 0;
+  justify-content: flex-start;
 }
 
 .roster-primary span {
@@ -1279,7 +1435,7 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
 }
 
 .roster-meta {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   margin-left: auto;
   justify-content: flex-end;
 }
@@ -1328,6 +1484,41 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   white-space: nowrap;
 }
 
+.roster-badge--sketch {
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.roster-badge--sketch.sketch-card {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+}
+
+.roster-badge-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.roster-badge--items {
+  background: #f2f4f7;
+  color: #24303d;
+}
+
 .roster-badge--member {
   background: #eaf3ff;
   color: #225a9a;
@@ -1352,7 +1543,10 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
 .roster-remove-button {
   width: 2rem;
   height: 2rem;
+  margin: 0 !important;
   padding: 0;
+  align-self: center;
+  transform: translateY(0.08rem);
   border-radius: 999px;
   background: #c62828; /* match .danger-button background */
   border: 1px solid #9f1f1f; /* match .danger-button border */
@@ -1367,6 +1561,13 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   border: 1px solid #9f1f1f;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.roster-remove-glyph {
+  display: block;
+  line-height: 1;
+  font-family: Arial, Helvetica, sans-serif;
+  transform: translateY(-0.04em);
 }
 
 .roster-remove-button:hover {
@@ -1630,6 +1831,7 @@ wired-icon-button.secondary-button.queue-corner-button--active .queue-corner-but
   border-radius: 18px;
   background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
   padding: 0.65rem;
+  margin-bottom: 0.35rem;
 }
 
 wired-card.timeline-chart-card.sketch-entry-card,
@@ -1656,8 +1858,8 @@ wired-card.graph-chart-shell.sketch-entry-card {
 
 .graph-axis-label {
   fill: #6a7380;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
 }
 
 .graph-area {
@@ -1766,6 +1968,8 @@ wired-card.graph-chart-shell.sketch-entry-card {
   min-width: 100% !important;
   max-width: 100% !important;
   margin: 0 !important;
+  --sketch-fill-color: #fffdf8;
+  background-color: #fffdf8;
 }
 
 .graph-expand-modal-header {
@@ -1921,9 +2125,30 @@ wired-card.graph-chart-shell.sketch-entry-card {
   box-sizing: border-box;
 }
 
-.event-modal-form .control-input-group wired-input {
+.event-modal-form .control-input-group wired-input,
+.event-modal-form .control-input-group wired-textarea {
   width: 100%;
   box-sizing: border-box;
+}
+
+.event-modal-form .event-modal-claim-rules-group {
+  align-items: stretch;
+  text-align: left;
+}
+
+.event-modal-form .event-modal-claim-rules-input {
+  display: block;
+  width: 100%;
+  min-height: 12.5rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  text-align: left;
+  color: #111111;
+  opacity: 1;
+}
+
+.event-modal-form .event-modal-claim-rules-group .control-input-hint {
+  max-width: none;
 }
 
 .event-modal-form .control-input-group--centered input,
@@ -1943,31 +2168,33 @@ wired-card.graph-chart-shell.sketch-entry-card {
   width: min(100%, 28rem);
 }
 
-.event-modal-form .time-grid--centered {
-  grid-template-columns: repeat(2, minmax(0, 11rem));
+.event-modal-form .time-grid--event-details {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: 0.85rem;
   row-gap: 0.85rem;
   margin-bottom: 1.15rem;
 }
 
-.event-modal-form .control-input-group--time {
-  width: min(100%, 11rem);
+.event-modal-form .time-grid--event-details .control-input-group--time {
+  width: 100%;
+  max-width: none;
+  margin-bottom: 0;
 }
 
-.event-modal-form .control-input-group--time input {
-  max-width: 11rem;
+.event-modal-form .time-grid--event-details .control-input-group--time input {
+  max-width: none;
 }
 
-.event-modal-form .control-input-group--time wired-input {
-  max-width: 11rem;
+.event-modal-form .time-grid--event-details .control-input-group--time wired-input {
+  max-width: none;
 }
 
-.event-modal-form .control-input-group--time .sketch-select {
-  max-width: 11rem;
+.event-modal-form .time-grid--event-details .control-input-group--time .sketch-select {
+  max-width: none;
 }
 
-.event-modal-form .control-input-group--time .sketch-combo {
-  max-width: 11rem;
+.event-modal-form .time-grid--event-details .control-input-group--time .sketch-combo {
+  max-width: none;
 }
 
 .event-modal-form .control-input-group--compact {
@@ -1992,19 +2219,32 @@ wired-card.graph-chart-shell.sketch-entry-card {
 }
 
 .event-modal-form .event-member-checkin-inline-control {
-  width: min(100%, 14rem);
+  width: 100%;
   justify-content: center;
-  margin: 0 auto;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
 }
 
 .event-modal-form .event-member-checkin-inline-control .event-member-checkin-slider {
-  width: 9rem !important;
-  min-width: 9rem !important;
-  flex: 0 0 9rem;
-  display: inline-block;
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto;
+  display: block;
   --wired-slider-knob-zero-color: #8c8c8c;
   --wired-slider-knob-color: #111111;
   --wired-slider-bar-color: #d2b384;
+}
+
+.event-modal-form .control-input-group--time-slider .control-input-hint {
+  max-width: none;
+  text-align: center;
+}
+
+.event-modal-form .control-input-group--time-slider .event-member-checkin-inline-control span {
+  text-align: center;
 }
 
 .event-modal-form .control-actions {
@@ -2390,10 +2630,7 @@ wired-icon-button:active .icon-animated {
   bottom: 1.25rem;
   transform: translateX(-50%);
   z-index: 950;
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: center;
-  gap: 0.75rem;
+  display: block;
   padding: 0.85rem;
   border: none;
   border-radius: 0;
@@ -2404,6 +2641,17 @@ wired-icon-button:active .icon-animated {
 
 .bottom-navbar.sketch-navbar-card {
   --wired-card-background-fill: #111111;
+}
+
+.bottom-navbar-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .bottom-navbar-button {
@@ -2428,10 +2676,19 @@ wired-icon-button:active .icon-animated {
   cursor: pointer;
 }
 
+.bottom-navbar-content {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  white-space: nowrap;
+}
+
 .bottom-navbar-button .button-icon {
-  display: inline-block;
-  vertical-align: middle;
-  margin-right: 0.1rem;
+  display: block;
+  margin-right: 0;
 }
 
 .bottom-navbar-button span {
@@ -2729,15 +2986,27 @@ button:disabled {
 }
 
 .sketch-icon-button {
-  margin: 0.25rem;
+  margin: 0;
   padding: 0;
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
   color: inherit;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   overflow: visible !important;
   clip-path: none !important;
+}
+
+.sketch-icon-button > .button-icon,
+.sketch-icon-button > .queue-corner-button-icon,
+.sketch-icon-button > .timeline-chart-close-glyph,
+.sketch-icon-button > .roster-remove-glyph {
+  display: block;
+  margin: 0 auto;
+  line-height: 1;
 }
 
 .sketch-checkbox {
@@ -3003,7 +3272,7 @@ button.ready-button:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
+  gap: 0.16rem;
   max-width: min(26rem, calc(100vw - 3rem));
   pointer-events: none;
 }
@@ -3011,13 +3280,15 @@ button.ready-button:hover:not(:disabled) {
 .display-feed-item {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.45rem;
   color: #111111;
   text-align: left;
   text-shadow: 0 1px 10px rgba(255, 255, 255, 0.9);
+  animation: displayFeedSlideIn 260ms ease-out both;
 }
 
 .display-feed-copy {
+  margin: 0;
   width: 100%;
   min-width: 0;
   max-width: 20rem;
@@ -3043,9 +3314,9 @@ button.ready-button:hover:not(:disabled) {
 }
 
 .display-feed-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: 0 0 2.5rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: 0 0 2.1rem;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.75);
@@ -3063,9 +3334,20 @@ button.ready-button:hover:not(:disabled) {
 
 .display-feed-avatar-fallback {
   color: #111111;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+@keyframes displayFeedSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .display-title-row {
@@ -3154,13 +3436,14 @@ li {
   text-align: left;
   line-height: 90%;
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.4rem;
+  font-weight: bolder;
 }
 
 .qr-helper-text {
   max-width: 200px;
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.02rem;
   color: #5a5a5a;
 }
 
@@ -3189,7 +3472,7 @@ li {
 
 @media (max-width: 900px) {
   #root {
-    padding: 1rem;
+    padding: 0;
   }
 
   .event-modal {
@@ -3214,9 +3497,14 @@ li {
 
   .event-modal-form .control-input-group input,
   .event-modal-form .control-input-group wired-input,
+  .event-modal-form .control-input-group wired-textarea,
   .event-modal-form .control-input-group select {
     padding: 0.75rem 0.85rem;
     font-size: 0.98rem;
+  }
+
+  .event-modal-form .event-modal-claim-rules-input {
+    min-height: 10.5rem;
   }
 
   .event-modal-form .title-grid .event-modal-title-input {
@@ -3224,19 +3512,19 @@ li {
     font-size: 1.2rem;
   }
 
-  .event-modal-form .time-grid--centered {
-    grid-template-columns: repeat(2, minmax(0, 10rem));
+  .event-modal-form .time-grid--event-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     column-gap: 0.7rem;
     row-gap: 0.7rem;
     margin-bottom: 0.95rem;
   }
 
-  .event-modal-form .control-input-group--time,
-  .event-modal-form .control-input-group--time input,
-  .event-modal-form .control-input-group--time wired-input,
-  .event-modal-form .control-input-group--time .sketch-select,
-  .event-modal-form .control-input-group--time .sketch-combo {
-    max-width: 10rem;
+  .event-modal-form .time-grid--event-details .control-input-group--time,
+  .event-modal-form .time-grid--event-details .control-input-group--time input,
+  .event-modal-form .time-grid--event-details .control-input-group--time wired-input,
+  .event-modal-form .time-grid--event-details .control-input-group--time .sketch-select,
+  .event-modal-form .time-grid--event-details .control-input-group--time .sketch-combo {
+    max-width: none;
   }
 
   .event-modal-form .control-input-group--compact {
@@ -3272,11 +3560,16 @@ li {
 
   .control {
     overflow-x: clip;
+    padding: 0;
     padding-bottom: 9rem;
   }
 
+  .control-dashboard {
+    padding-top: 0.75rem;
+  }
+
   .claim-page--focused {
-    padding: 0.75rem 0.5rem;
+    padding: 0.75rem;
   }
 
   .entry-card,
@@ -3462,21 +3755,35 @@ li {
   }
 
   .queue-card {
-    max-height: min(84vh, 44rem);
+    max-height: none;
   }
 
   .queue-card--settings-open {
-    max-height: min(92vh, 56rem);
+    max-height: none;
   }
 
   .roster-card {
-    max-height: min(76vh, 42rem);
+    max-height: none;
   }
 
   .roster-list--attendees,
   .roster-list--queue,
   .roster-list--group {
     padding-right: 0.2rem;
+  }
+
+  .roster-list--attendees {
+    max-height: min(70vh, 40rem);
+  }
+
+  .roster-card--with-graphs .roster-list--attendees {
+    max-height: min(52vh, 28rem);
+  }
+
+  .roster-filter-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .roster-list--queue {
@@ -3508,24 +3815,18 @@ li {
   }
 
   .roster-badge {
-    padding: 0.22rem 0.5rem;
     font-size: 0.76rem;
+  }
+
+  .roster-badge:not(.roster-badge--sketch),
+  .roster-badge-label {
+    padding: 0.22rem 0.5rem;
   }
 
   .roster-inline-action {
     min-height: 1.8rem;
     padding: 0.3rem 0.62rem;
     font-size: 0.7rem;
-  }
-
-  .bottom-navbar {
-    gap: 0.5rem;
-    padding: 0.65rem;
-  }
-
-  .bottom-navbar-button {
-    padding: 0.8rem 0.7rem;
-    font-size: 0.95rem;
   }
 
 }
@@ -3563,10 +3864,15 @@ li {
 
   .event-modal-form .control-input-group input,
   .event-modal-form .control-input-group wired-input,
+  .event-modal-form .control-input-group wired-textarea,
   .event-modal-form .control-input-group select {
     padding: 0.68rem 0.78rem;
     font-size: 0.95rem;
     border-radius: 9px;
+  }
+
+  .event-modal-form .event-modal-claim-rules-input {
+    min-height: 9.5rem;
   }
 
   .event-modal-form .title-grid .event-modal-title-input {
@@ -3579,17 +3885,20 @@ li {
     font-size: 0.86rem;
   }
 
-  .event-modal-form .time-grid--centered {
-    grid-template-columns: minmax(0, 10rem);
+  .event-modal-form .time-grid--event-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     row-gap: 0.6rem;
     margin-bottom: 0.8rem;
   }
 
-  .event-modal-form .control-input-group--time,
-  .event-modal-form .control-input-group--time input,
-  .event-modal-form .control-input-group--time wired-input,
-  .event-modal-form .control-input-group--time .sketch-select,
-  .event-modal-form .control-input-group--time .sketch-combo,
+  .event-modal-form .time-grid--event-details .control-input-group--time,
+  .event-modal-form .time-grid--event-details .control-input-group--time input,
+  .event-modal-form .time-grid--event-details .control-input-group--time wired-input,
+  .event-modal-form .time-grid--event-details .control-input-group--time .sketch-select,
+  .event-modal-form .time-grid--event-details .control-input-group--time .sketch-combo {
+    max-width: none;
+  }
+
   .event-modal-form .control-input-group--compact,
   .event-modal-form .control-input-group--compact input,
   .event-modal-form .control-input-group--compact wired-input,

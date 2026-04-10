@@ -8,6 +8,7 @@ import {
   Settings,
 } from "lucide-react";
 import bbcLogo from "../assets/bbc_logo.png";
+import { parseClaimRulesList } from "../claimRules";
 import { SketchButton, SketchCard, SketchDialog, SketchIconButton } from "./SketchUI";
 import Spinner from "./Spinner";
 import { getEventTitleClassName } from "../titleFonts";
@@ -33,6 +34,8 @@ function ClaimRulesModal({
   liveState,
   onAcknowledgeRules,
 }) {
+  const claimRules = parseClaimRulesList(liveState?.claimRulesText);
+
   return (
     <SketchDialog
       className="claim-rules-dialog"
@@ -48,12 +51,9 @@ function ClaimRulesModal({
           <h2>Welcome to {liveState.title}!</h2>
           <div className="claim-rules-copy">
             <ol>
-                <li>When your number is called, you can come up and claim one item.</li>
-                <li>Before your number is called, read the book descriptions, which are linked below your
-              number, so you know what you&apos;d like to grab.</li>
-                <li>After you claim your item, a staff member will scan your QR code to confirm your claim.</li>
-                <li>There will likely be multiple rounds of goodie selection, so once the current round
-              ends, you&apos;ll be up again for more. You&apos;ll want to stick around.</li>
+              {claimRules.map((ruleText, index) => (
+                <li key={`${index}-${ruleText.slice(0, 20)}`}>{ruleText}</li>
+              ))}
             </ol>
           </div>
           <div className="claim-rules-actions">
@@ -131,9 +131,9 @@ function ClaimResultCard({
       {isClaimActive ? (
         <div className="claim-qr-inline-block">
           <p className="eyebrow eyebrow--active rainbow-text">Show This To Staff After Picking an Item</p>
-          <div className="claim-qr-box">
+          <SketchCard className="claim-qr-box sketch-entry-card" elevation={1}>
             <QRCode value={claimQrPayload} size={180} />
-          </div>
+          </SketchCard>
         </div>
       ) : null}
       <div className="claim-card-actions">
@@ -389,18 +389,26 @@ function ClaimPage(props) {
       {claimResult && isClaimRulesOpen ? <ClaimRulesModal {...props} /> : null}
       {showControlNavbar ? (
         <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
-          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
-            <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
-            <span>Open Scanner</span>
-          </SketchButton>
-          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
-            <Settings aria-hidden="true" className="button-icon icon-animated icon-animate-spin-slow" />
-            <span>Control Panel</span>
-          </SketchButton>
-          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
-            <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
-            <span>Open Display</span>
-          </SketchButton>
+          <div className="bottom-navbar-row">
+            <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={handleOpenScanner}>
+              <div className="bottom-navbar-content">
+                <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
+                <span>Open Scanner</span>
+              </div>
+            </SketchButton>
+            <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenControlPanel}>
+              <div className="bottom-navbar-content">
+                <Settings aria-hidden="true" className="button-icon icon-animated icon-animate-spin-slow" />
+                <span>Control Panel</span>
+              </div>
+            </SketchButton>
+            <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+              <div className="bottom-navbar-content">
+                <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
+                <span>Open Display</span>
+              </div>
+            </SketchButton>
+          </div>
         </SketchCard>
       ) : null}
     </div>

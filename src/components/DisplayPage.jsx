@@ -77,7 +77,6 @@ function DisplayPage({
             <div className="rules-qr-layout">
               <div className="qr-claim-copy">
                 <h2 className="qr-caption">Scan to Claim Your Number</h2>
-                <p className="qr-helper-text">This attendee QR refreshes every minute.</p>
                 <div className="qr-refresh-status" aria-live="polite">
                   <p className="qr-refresh-label">{countdownLabel}</p>
                   <SketchProgress

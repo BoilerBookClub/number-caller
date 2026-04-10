@@ -14,7 +14,9 @@ import "wired-elements/lib/wired-icon-button.js";
 import "wired-elements/lib/wired-input.js";
 import "wired-elements/lib/wired-item.js";
 import "wired-elements/lib/wired-progress.js";
+import "wired-elements/lib/wired-search-input.js";
 import "wired-elements/lib/wired-slider.js";
+import "wired-elements/lib/wired-textarea.js";
 import "wired-elements/lib/wired-toggle.js";
 
 const SketchButton = forwardRef(function SketchButton(
@@ -118,11 +120,209 @@ const SketchInput = forwardRef(function SketchInput(
   );
 });
 
+const SketchSearchInput = forwardRef(function SketchSearchInput(
+  { onChange, value, defaultValue, className = "", ...props },
+  ref,
+) {
+  const innerRef = useRef(null);
+  const hasAppliedDefaultValueRef = useRef(false);
+
+  useImperativeHandle(ref, () => innerRef.current);
+
+  useEffect(() => {
+    const inputElement = innerRef.current;
+    if (!inputElement) {
+      return undefined;
+    }
+
+    const handleInput = (event) => {
+      if (typeof onChange === "function") {
+        const sourceEvent = event?.detail?.sourceEvent;
+        onChange(sourceEvent || event);
+      }
+    };
+
+    inputElement.addEventListener("input", handleInput);
+    inputElement.addEventListener("change", handleInput);
+
+    return () => {
+      inputElement.removeEventListener("input", handleInput);
+      inputElement.removeEventListener("change", handleInput);
+    };
+  }, [onChange]);
+
+  useEffect(() => {
+    const inputElement = innerRef.current;
+    if (!inputElement || value === undefined) {
+      return;
+    }
+
+    const normalizedValue = value == null ? "" : String(value);
+    if (inputElement.value !== normalizedValue) {
+      inputElement.value = normalizedValue;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    const inputElement = innerRef.current;
+    if (!inputElement || value !== undefined || hasAppliedDefaultValueRef.current) {
+      return;
+    }
+
+    if (defaultValue !== undefined) {
+      inputElement.value = defaultValue == null ? "" : String(defaultValue);
+      hasAppliedDefaultValueRef.current = true;
+    }
+  }, [defaultValue, value]);
+
+  return (
+    <wired-search-input
+      ref={innerRef}
+      class={className ? `sketch-search-input ${className}` : "sketch-search-input"}
+      {...props}
+    />
+  );
+});
+
+const SketchTextarea = forwardRef(function SketchTextarea(
+  { onChange, value, defaultValue, className = "", maxrows, rows, ...props },
+  ref,
+) {
+  const innerRef = useRef(null);
+  const hasAppliedDefaultValueRef = useRef(false);
+
+  useImperativeHandle(ref, () => innerRef.current);
+
+  useEffect(() => {
+    const textareaElement = innerRef.current;
+    if (!textareaElement) {
+      return undefined;
+    }
+
+    const handleInput = (event) => {
+      if (typeof onChange === "function") {
+        const sourceEvent = event?.detail?.sourceEvent;
+        onChange(sourceEvent || event);
+      }
+    };
+
+    textareaElement.addEventListener("input", handleInput);
+    textareaElement.addEventListener("change", handleInput);
+
+    return () => {
+      textareaElement.removeEventListener("input", handleInput);
+      textareaElement.removeEventListener("change", handleInput);
+    };
+  }, [onChange]);
+
+  useEffect(() => {
+    const textareaElement = innerRef.current;
+    if (!textareaElement || value === undefined) {
+      return;
+    }
+
+    const normalizedValue = value == null ? "" : String(value);
+    if (textareaElement.value !== normalizedValue) {
+      textareaElement.value = normalizedValue;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    const textareaElement = innerRef.current;
+    if (!textareaElement || value !== undefined || hasAppliedDefaultValueRef.current) {
+      return;
+    }
+
+    if (defaultValue !== undefined) {
+      textareaElement.value = defaultValue == null ? "" : String(defaultValue);
+      hasAppliedDefaultValueRef.current = true;
+    }
+  }, [defaultValue, value]);
+
+  useEffect(() => {
+    const textareaElement = innerRef.current;
+    if (!textareaElement) {
+      return;
+    }
+
+    if (rows !== undefined) {
+      const normalizedRows = Number(rows);
+      if (Number.isFinite(normalizedRows)) {
+        textareaElement.rows = normalizedRows;
+      }
+    }
+
+    if (maxrows !== undefined) {
+      const normalizedMaxRows = Number(maxrows);
+      if (Number.isFinite(normalizedMaxRows)) {
+        textareaElement.maxrows = normalizedMaxRows;
+      }
+    }
+  }, [maxrows, rows]);
+
+  useEffect(() => {
+    const textareaElement = innerRef.current;
+    if (!textareaElement) {
+      return undefined;
+    }
+
+    let frameId = null;
+    let timeoutId = null;
+    let resizeObserver = null;
+
+    const redraw = () => {
+      if (typeof textareaElement.requestUpdate === "function") {
+        textareaElement.requestUpdate();
+      }
+
+      if (typeof textareaElement.wiredRender === "function") {
+        textareaElement.wiredRender(true);
+      }
+    };
+
+    redraw();
+    frameId = window.requestAnimationFrame(redraw);
+    timeoutId = window.setTimeout(redraw, 0);
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        redraw();
+      });
+      resizeObserver.observe(textareaElement);
+    }
+
+    return () => {
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [className, maxrows, rows, value]);
+
+  return (
+    <wired-textarea
+      ref={innerRef}
+      class={className ? `sketch-textarea ${className}` : "sketch-textarea"}
+      rows={rows}
+      maxrows={maxrows}
+      {...props}
+    />
+  );
+});
+
 const SketchCard = forwardRef(function SketchCard(
   {
     children,
     className = "",
     fill = "",
+    redrawDelayMs = 0,
+    redrawOnResize = false,
+    redrawSignal,
     strokeColor = "",
     style,
     ...props
@@ -142,6 +342,62 @@ const SketchCard = forwardRef(function SketchCard(
         }
       : {}),
   };
+
+  useEffect(() => {
+    if (!redrawOnResize && !(Number(redrawDelayMs) > 0) && redrawSignal === undefined) {
+      return undefined;
+    }
+
+    const cardElement = innerRef.current;
+    if (!cardElement) {
+      return undefined;
+    }
+
+    let frameId = null;
+    let timeoutId = null;
+    let delayedTimeoutId = null;
+    let resizeObserver = null;
+
+    const redraw = () => {
+      if (typeof cardElement.requestUpdate === "function") {
+        cardElement.requestUpdate();
+      }
+
+      if (typeof cardElement.wiredRender === "function") {
+        cardElement.wiredRender(true);
+      }
+    };
+
+    redraw();
+    frameId = window.requestAnimationFrame(redraw);
+    timeoutId = window.setTimeout(redraw, 0);
+
+    if (Number(redrawDelayMs) > 0) {
+      delayedTimeoutId = window.setTimeout(redraw, Number(redrawDelayMs));
+    }
+
+    if (redrawOnResize && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        redraw();
+      });
+      resizeObserver.observe(cardElement);
+    }
+
+    return () => {
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (delayedTimeoutId != null) {
+        window.clearTimeout(delayedTimeoutId);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [className, fill, redrawDelayMs, redrawOnResize, redrawSignal, strokeColor]);
 
   return (
     <wired-card
@@ -168,7 +424,7 @@ const SketchSelect = forwardRef(function SketchSelect({ children, className = ""
 });
 
 const SketchCombo = forwardRef(function SketchCombo(
-  { children, className = "", onChange, selected, ...props },
+  { children, className = "", fullWidth = false, onChange, selected, ...props },
   ref,
 ) {
   const innerRef = useRef(null);
@@ -234,6 +490,161 @@ const SketchCombo = forwardRef(function SketchCombo(
       comboElement.removeEventListener("selected", handleSelected);
     };
   }, [onChange]);
+
+  useEffect(() => {
+    const comboElement = innerRef.current;
+    if (!comboElement || !fullWidth) {
+      return undefined;
+    }
+
+    let positionFrameId = null;
+
+    const positionDropdownCard = () => {
+      const cardElement = comboElement.shadowRoot?.getElementById?.("card");
+      if (!cardElement || cardElement.style.display === "none") {
+        return;
+      }
+
+      const gapPx = 6;
+      const viewportHeight =
+        window.innerHeight || document.documentElement?.clientHeight || 0;
+      const hostRect = comboElement.getBoundingClientRect();
+      const cardRect = cardElement.getBoundingClientRect();
+      const spaceBelow = Math.max(0, viewportHeight - hostRect.bottom - gapPx);
+      const spaceAbove = Math.max(0, hostRect.top - gapPx);
+      const shouldOpenUpward = cardRect.height > spaceBelow && spaceAbove > spaceBelow;
+      const maxDropdownHeight = Math.max(
+        128,
+        Math.floor(shouldOpenUpward ? spaceAbove : spaceBelow),
+      );
+
+      cardElement.style.left = "0px";
+      cardElement.style.right = "auto";
+      cardElement.style.zIndex = "1000";
+      cardElement.style.overflowY = "auto";
+      cardElement.style.overscrollBehavior = "contain";
+      cardElement.style.maxHeight = `${maxDropdownHeight}px`;
+
+      if (shouldOpenUpward) {
+        cardElement.style.top = "auto";
+        cardElement.style.bottom = `calc(100% + ${gapPx}px)`;
+      } else {
+        cardElement.style.bottom = "auto";
+        cardElement.style.top = `calc(100% + ${gapPx}px)`;
+      }
+    };
+
+    const requestDropdownPosition = () => {
+      if (positionFrameId != null) {
+        window.cancelAnimationFrame(positionFrameId);
+      }
+
+      positionFrameId = window.requestAnimationFrame(() => {
+        positionFrameId = null;
+        positionDropdownCard();
+      });
+    };
+
+    const syncComboLayout = () => {
+      const shadowRoot = comboElement.shadowRoot;
+      const containerElement = shadowRoot?.getElementById?.("container");
+      const textPanelElement = shadowRoot?.getElementById?.("textPanel");
+      const dropPanelElement = shadowRoot?.getElementById?.("dropPanel");
+      if (!containerElement || !textPanelElement || !dropPanelElement) {
+        return;
+      }
+
+      const hostWidth = comboElement.getBoundingClientRect().width;
+      if (!(hostWidth > 0)) {
+        return;
+      }
+
+      const hostHeight = comboElement.getBoundingClientRect().height;
+
+      // wired-combo renders inline shadow children; force a stable full-width, left-aligned flex layout.
+      containerElement.style.display = "flex";
+      containerElement.style.width = "100%";
+      containerElement.style.alignItems = "stretch";
+      containerElement.style.textAlign = "left";
+      textPanelElement.style.flex = "1 1 auto";
+      textPanelElement.style.minWidth = "0";
+      textPanelElement.style.width = "auto";
+      textPanelElement.style.display = "inline-flex";
+      textPanelElement.style.alignItems = "center";
+      textPanelElement.style.justifyContent = "flex-start";
+      textPanelElement.style.textAlign = "left";
+      dropPanelElement.style.flex = "0 0 34px";
+      dropPanelElement.style.width = "34px";
+      dropPanelElement.style.minWidth = "34px";
+
+      if (hostHeight > 0) {
+        const nextPanelHeight = Math.max(32, Math.floor(hostHeight - 10));
+        textPanelElement.style.minHeight = `${nextPanelHeight}px`;
+        textPanelElement.style.height = `${nextPanelHeight}px`;
+        dropPanelElement.style.minHeight = `${nextPanelHeight}px`;
+        dropPanelElement.style.height = `${nextPanelHeight}px`;
+      }
+
+      if (typeof comboElement.requestUpdate === "function") {
+        comboElement.requestUpdate();
+      }
+
+      requestDropdownPosition();
+    };
+
+    let frameId = null;
+    let timeoutId = null;
+    frameId = window.requestAnimationFrame(syncComboLayout);
+    timeoutId = window.setTimeout(syncComboLayout, 0);
+
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        syncComboLayout();
+      });
+      resizeObserver.observe(comboElement);
+    }
+
+    let mutationObserver = null;
+    if (typeof MutationObserver !== "undefined") {
+      mutationObserver = new MutationObserver(() => {
+        requestDropdownPosition();
+      });
+      mutationObserver.observe(comboElement, {
+        attributes: true,
+        attributeFilter: ["aria-expanded"],
+      });
+    }
+
+    comboElement.addEventListener("click", requestDropdownPosition);
+    comboElement.addEventListener("keydown", requestDropdownPosition);
+    comboElement.addEventListener("selected", requestDropdownPosition);
+    window.addEventListener("resize", requestDropdownPosition);
+    window.addEventListener("scroll", requestDropdownPosition, true);
+
+    return () => {
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (positionFrameId != null) {
+        window.cancelAnimationFrame(positionFrameId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      if (mutationObserver) {
+        mutationObserver.disconnect();
+      }
+      comboElement.removeEventListener("click", requestDropdownPosition);
+      comboElement.removeEventListener("keydown", requestDropdownPosition);
+      comboElement.removeEventListener("selected", requestDropdownPosition);
+      window.removeEventListener("resize", requestDropdownPosition);
+      window.removeEventListener("scroll", requestDropdownPosition, true);
+    };
+  }, [children, fullWidth, selected]);
 
   return (
     <wired-combo
@@ -470,6 +881,50 @@ const SketchProgress = forwardRef(function SketchProgress(
     progressElement.percentage = Boolean(percentage);
   }, [max, min, percentage, value]);
 
+  useEffect(() => {
+    const progressElement = innerRef.current;
+    if (!progressElement) {
+      return undefined;
+    }
+
+    let frameId = null;
+    let timeoutId = null;
+    let resizeObserver = null;
+
+    const redraw = () => {
+      if (typeof progressElement.requestUpdate === "function") {
+        progressElement.requestUpdate();
+      }
+
+      if (typeof progressElement.wiredRender === "function") {
+        progressElement.wiredRender(true);
+      }
+    };
+
+    redraw();
+    frameId = window.requestAnimationFrame(redraw);
+    timeoutId = window.setTimeout(redraw, 0);
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        redraw();
+      });
+      resizeObserver.observe(progressElement);
+    }
+
+    return () => {
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [className, max, min, percentage, value]);
+
   return (
     <wired-progress
       ref={innerRef}
@@ -570,7 +1025,9 @@ export {
   SketchIconButton,
   SketchInput,
   SketchProgress,
+  SketchSearchInput,
   SketchSlider,
   SketchSelect,
+  SketchTextarea,
   SketchToggle,
 };

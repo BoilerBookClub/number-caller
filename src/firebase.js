@@ -507,13 +507,41 @@ export const updateLiveEventDetails = async ({
     throw new Error("Firebase is not configured.");
   }
 
-  await updateDoc(liveStateRef, {
+  const liveEventSnapshot = await getDoc(liveStateRef);
+  const liveEventData = liveEventSnapshot.exists() ? liveEventSnapshot.data() || {} : {};
+  const sanitizedLiveEventData = {
+    active: liveEventData.active === true,
+    claimCount: Number.isFinite(liveEventData.claimCount)
+      ? Math.max(0, Math.trunc(liveEventData.claimCount))
+      : 0,
+    claimAccessSecret:
+      typeof liveEventData.claimAccessSecret === "string" ? liveEventData.claimAccessSecret : "",
+    eventId:
+      liveEventData.eventId == null
+        ? null
+        : typeof liveEventData.eventId === "string"
+          ? liveEventData.eventId
+          : String(liveEventData.eventId),
+    nextClaimNumber:
+      Number.isFinite(liveEventData.nextClaimNumber) && liveEventData.nextClaimNumber >= 1
+        ? Math.trunc(liveEventData.nextClaimNumber)
+        : 1,
     state,
     timeframeEnd,
     timeframeLabel,
     timeframeStart,
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (liveEventData.startedAt != null) {
+    sanitizedLiveEventData.startedAt = liveEventData.startedAt;
+  }
+
+  if (liveEventData.endedAt != null) {
+    sanitizedLiveEventData.endedAt = liveEventData.endedAt;
+  }
+
+  await setDoc(liveStateRef, sanitizedLiveEventData);
 };
 
 export const pushLiveState = async (state) => {

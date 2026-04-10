@@ -22,6 +22,7 @@ service cloud.firestore {
         && state.keys().hasOnly([
           'title',
           'titleFont',
+          'claimRulesText',
           'qrUrl',
           'autoAdvanceEnabled',
           'autoAdvanceBacklogLimitEnabled',
@@ -45,6 +46,8 @@ service cloud.firestore {
         && state.title.size() > 0
         && state.title.size() <= 120
         && state.titleFont is string
+        && state.claimRulesText is string
+        && state.claimRulesText.size() <= 6000
         && state.qrUrl is string
         && state.qrUrl.size() <= 2048
         && state.autoAdvanceEnabled is bool

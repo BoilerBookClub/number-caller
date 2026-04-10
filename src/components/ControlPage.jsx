@@ -17,7 +17,9 @@ import {
   SketchIconButton,
   SketchInput,
   SketchProgress,
+  SketchSearchInput,
   SketchSlider,
+  SketchTextarea,
   SketchToggle,
 } from "./SketchUI";
 import { getEventTitleClassName, TITLE_FONT_OPTIONS } from "../titleFonts";
@@ -26,7 +28,7 @@ const AUTO_SETTINGS_ANIMATION_MS = 180;
 const GRAPH_PANEL_ANIMATION_MS = 180;
 const GRAPH_CHART_WIDTH = 760;
 const GRAPH_CHART_HEIGHT = 250;
-const GRAPH_CHART_PADDING = { top: 18, right: 18, bottom: 34, left: 44 };
+const GRAPH_CHART_PADDING = { top: 18, right: 18, bottom: 52, left: 58 };
 
 function formatGraphTimeLabel(timestampMs) {
   if (!Number.isFinite(timestampMs)) {
@@ -340,17 +342,31 @@ function EventDetailsModal({
                 </SketchCombo>
               </label>
             </div>
-              <label className="control-input-group control-input-group--centered">
-                <span>Book List URL</span>
-                <SketchInput
-                  className="event-modal-default-input"
-                  type="url"
+            <label className="control-input-group control-input-group--centered">
+              <span>Book List URL</span>
+              <SketchInput
+                className="event-modal-default-input"
+                type="url"
                   value={controlForm.qrUrl}
                   onChange={onFieldChange("qrUrl")}
-                  placeholder="Enter QR code destination"
-                />
+                placeholder="Enter QR code destination"
+              />
             </label>
-            <div className="time-grid time-grid--centered">
+            <label className="control-input-group event-modal-claim-rules-group">
+              <span>Claim Rules (One Per Line)</span>
+              <SketchTextarea
+                className="event-modal-default-input event-modal-claim-rules-input"
+                rows={8}
+                maxrows={16}
+                value={controlForm.claimRulesText}
+                onChange={onFieldChange("claimRulesText")}
+                placeholder="Enter one claim rule per line"
+              />
+              <small className="control-input-hint">
+                Shown in the attendee claim rules modal before they start.
+              </small>
+            </label>
+            <div className="time-grid time-grid--centered time-grid--event-details">
               <label className="control-input-group control-input-group--centered control-input-group--time">
                 <span>Start Time</span>
                 <SketchInput
@@ -369,24 +385,24 @@ function EventDetailsModal({
                   onChange={onFieldChange("timeframeEnd")}
                 />
               </label>
+              <label className="control-input-group control-input-group--centered control-input-group--time control-input-group--time-slider">
+                <span>Member Early Check-In</span>
+                <div className="queue-auto-advance-inline-control event-member-checkin-inline-control">
+                  <SketchSlider
+                    className="queue-auto-advance-slider event-member-checkin-slider"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={memberCheckInLeadMinutes}
+                    onChange={onFieldChange("memberCheckInLeadMinutes")}
+                  />
+                  <span>{memberCheckInLeadMinutes} min</span>
+                </div>
+                <small className="control-input-hint">
+                  {memberCheckInLabel} before event start.
+                </small>
+              </label>
             </div>
-            <label className="control-input-group control-input-group--centered control-input-group--compact">
-              <span>Member Early Check-In</span>
-              <div className="queue-auto-advance-inline-control event-member-checkin-inline-control">
-                <SketchSlider
-                  className="queue-auto-advance-slider event-member-checkin-slider"
-                  min={0}
-                  max={60}
-                  step={1}
-                  value={memberCheckInLeadMinutes}
-                  onChange={onFieldChange("memberCheckInLeadMinutes")}
-                />
-                <span>{memberCheckInLeadMinutes} min</span>
-              </div>
-              <small className="control-input-hint">
-                {memberCheckInLabel} before event start.
-              </small>
-            </label>
             {controlMessage ? <p className="entry-message">{controlMessage}</p> : null}
             <div className="control-actions">
               <SketchButton type="submit" disabled={controlSaving}>
@@ -404,7 +420,7 @@ function EventDetailsModal({
   );
 }
 
-function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }) {
+function ClaimList({ claims, currentRound, emptyText, isFinalCall }) {
   if (!claims.length) {
     return <p>{emptyText}</p>;
   }
@@ -428,13 +444,16 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
       <div className="queue-summary" aria-label="Current queue status">
         {queueSummaryItems.map((item) =>
           item.value ? (
-            <div
-              key={item.label}
-              className={`queue-summary-card${item.label === "Claimed" && isGroupFullyClaimed ? " queue-summary-card--complete" : ""}`}
-            >
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-              {item.label === "Claimed" ? (
+            item.label === "Claimed" ? (
+              <SketchCard
+                key={item.label}
+                className={`queue-summary-card${isGroupFullyClaimed ? " queue-summary-card--complete" : ""}`}
+                elevation={1}
+                fill={isGroupFullyClaimed ? "#e6f7ea" : "#fffdf8"}
+                strokeColor={isGroupFullyClaimed ? "#186a3b" : "#111111"}
+              >
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
                 <SketchProgress
                   className="queue-summary-progress"
                   value={Math.max(0, Math.min(1, claimedProgress)) * 100}
@@ -442,16 +461,18 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
                   max={100}
                   aria-hidden="true"
                 />
-              ) : null}
-            </div>
+              </SketchCard>
+            ) : (
+              <div
+                key={item.label}
+                className={`queue-summary-card${item.label === "Claimed" && isGroupFullyClaimed ? " queue-summary-card--complete" : ""}`}
+              >
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            )
           ) : null,
         )}
-        {!isFinalCall && isLastGroup ? (
-          <div className="queue-summary-card queue-summary-card--alert">
-            <span>Queue Status</span>
-            <strong>Last group ready for Final Call</strong>
-          </div>
-        ) : null}
       </div>
       <div className="roster-list roster-list--group" role="list">
         {claims.map((claim) => {
@@ -461,11 +482,11 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
           return (
             <SketchCard
               key={claim.claimId}
-              className="roster-row roster-row--sketch sketch-entry-card"
+              className={`roster-row roster-row--sketch sketch-entry-card${hasClaimedCurrentGroup ? " roster-row--claimed" : ""}`}
               role="listitem"
               elevation={1}
-              fill="#fffdf8"
-              strokeColor="#111111"
+              fill={hasClaimedCurrentGroup ? "#e6f7ea" : "#fffdf8"}
+              strokeColor={hasClaimedCurrentGroup ? "#186a3b" : "#111111"}
             >
               <div className="roster-row-content">
                 <div className="roster-primary">
@@ -480,17 +501,27 @@ function ClaimList({ claims, currentRound, emptyText, isLastGroup, isFinalCall }
                   <span>{claim.displayName}</span>
                 </div>
                 <div className="roster-meta">
-                  <span
-                    className={`roster-badge ${hasClaimedCurrentGroup ? "roster-badge--claimed" : "roster-badge--waiting"}`}
+                  {!hasClaimedCurrentGroup ? (
+                    <span className="roster-badge roster-badge--waiting">Waiting</span>
+                  ) : null}
+                  <SketchCard
+                    className="roster-badge roster-badge--items roster-badge--sketch"
+                    elevation={1}
+                    fill="#f2f4f7"
+                    strokeColor="#111111"
                   >
-                    {hasClaimedCurrentGroup ? "Claimed" : "Waiting"}
-                  </span>
-                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                  <span
-                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                    <span className="roster-badge-label">Items: {claim.itemsClaimedCount}</span>
+                  </SketchCard>
+                  <SketchCard
+                    className={`roster-badge roster-badge--sketch ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                    elevation={1}
+                    fill={claim.isMember ? "#eaf3ff" : "#fff1dc"}
+                    strokeColor="#111111"
                   >
-                    {claim.isMember ? "Member" : "Not Member"}
-                  </span>
+                    <span className="roster-badge-label">
+                      {claim.isMember ? "Member" : "Not Member"}
+                    </span>
+                  </SketchCard>
                 </div>
               </div>
             </SketchCard>
@@ -538,12 +569,24 @@ function BacklogList({ claims }) {
                 </div>
                 <div className="roster-meta">
                   <span className="roster-badge roster-badge--waiting">Waiting</span>
-                  <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                  <span
-                    className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                  <SketchCard
+                    className="roster-badge roster-badge--items roster-badge--sketch"
+                    elevation={1}
+                    fill="#f2f4f7"
+                    strokeColor="#111111"
                   >
-                    {claim.isMember ? "Member" : "Not Member"}
-                  </span>
+                    <span className="roster-badge-label">Items: {claim.itemsClaimedCount}</span>
+                  </SketchCard>
+                  <SketchCard
+                    className={`roster-badge roster-badge--sketch ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                    elevation={1}
+                    fill={claim.isMember ? "#eaf3ff" : "#fff1dc"}
+                    strokeColor="#111111"
+                  >
+                    <span className="roster-badge-label">
+                      {claim.isMember ? "Member" : "Not Member"}
+                    </span>
+                  </SketchCard>
                 </div>
               </div>
             </SketchCard>
@@ -579,7 +622,7 @@ function GraphModalOverlay({ children, onClose, title }) {
         aria-modal="true"
         aria-label={`${title} expanded view`}
         elevation={1}
-        fill="#ffffff"
+        fill="#fffdf8"
         strokeColor="#111111"
         onClick={(event) => event.stopPropagation()}
       >
@@ -608,6 +651,7 @@ function TimelineChart({
   isExpanded = false,
   onClose,
   onExpand,
+  redrawSignal,
   showEmptyGraphWhenNoData = false,
   showCloseButton,
   title,
@@ -640,6 +684,9 @@ function TimelineChart({
       role="region"
       elevation={1}
       fill="#ffffff"
+      redrawDelayMs={240}
+      redrawOnResize
+      redrawSignal={redrawSignal}
       strokeColor="#111111"
     >
       <div className="timeline-chart-header">
@@ -708,6 +755,9 @@ function TimelineChart({
           className="graph-chart-shell sketch-entry-card"
           elevation={1}
           fill="#ffffff"
+          redrawDelayMs={240}
+          redrawOnResize
+          redrawSignal={redrawSignal}
           strokeColor="#111111"
         >
           <svg
@@ -846,6 +896,7 @@ function AttendeeGraphsPanel({
           emptyText="No timestamped joins yet."
           onExpand={onExpandNumberClaims}
           onClose={onHideNumberClaims}
+          redrawSignal={panelClassName}
           showEmptyGraphWhenNoData
           showCloseButton={shouldShowChartCloseButtons}
           timestamps={joinedTimestamps}
@@ -859,6 +910,7 @@ function AttendeeGraphsPanel({
           emptyText="No timestamped item claims yet."
           onExpand={onExpandItemClaims}
           onClose={onHideItemClaims}
+          redrawSignal={panelClassName}
           showEmptyGraphWhenNoData
           showCloseButton={shouldShowChartCloseButtons}
           timestamps={itemClaimTimestamps}
@@ -889,6 +941,9 @@ function FullRoster({
   const [isGraphPanelMounted, setIsGraphPanelMounted] = useState(false);
   const [isNumberClaimsVisible, setIsNumberClaimsVisible] = useState(true);
   const [isItemClaimsVisible, setIsItemClaimsVisible] = useState(true);
+  const [rosterSearchQuery, setRosterSearchQuery] = useState("");
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [itemClaimFilter, setItemClaimFilter] = useState("all");
   const [refreshingPreclaimIds, setRefreshingPreclaimIds] = useState(() => new Set());
   const [isRefreshingAllPreclaims, setIsRefreshingAllPreclaims] = useState(false);
   const joinedTimeline = buildJoinedTimeline({
@@ -930,7 +985,7 @@ function FullRoster({
           emptyText: "No timestamped joins yet.",
           showEmptyGraphWhenNoData: true,
           timestamps: joinedTimestamps,
-          title: "Joined",
+          title: "Joined ",
           tone: "claims",
           totalLabel: "Joined",
         }
@@ -947,7 +1002,7 @@ function FullRoster({
               })
               .filter((timestampMs) => Number.isFinite(timestampMs)),
             showEmptyGraphWhenNoData: true,
-            title: "Item Claims",
+            title: "Item Claims ",
             tone: "items",
             totalLabel: "Items",
           }
@@ -1009,6 +1064,43 @@ function FullRoster({
     nextProjectedNumber = projectedNumber + 1;
   });
 
+  const normalizedRosterSearchQuery = rosterSearchQuery.trim().toLowerCase();
+  const filteredClaims = claims.filter((claim) => {
+    const isMemberMatch =
+      memberFilter === "all" ||
+      (memberFilter === "member" && claim.isMember === true) ||
+      (memberFilter === "non-member" && claim.isMember !== true);
+
+    if (!isMemberMatch) {
+      return false;
+    }
+
+    const hasClaimedAnyItem = Number.isFinite(Number(claim.itemsClaimedCount))
+      ? Number(claim.itemsClaimedCount) > 0
+      : false;
+    const isItemClaimMatch =
+      itemClaimFilter === "all" ||
+      (itemClaimFilter === "claimed" && hasClaimedAnyItem) ||
+      (itemClaimFilter === "unclaimed" && !hasClaimedAnyItem);
+
+    if (!isItemClaimMatch) {
+      return false;
+    }
+
+    if (!normalizedRosterSearchQuery) {
+      return true;
+    }
+
+    const claimDisplayName = String(claim.displayName ?? "").toLowerCase();
+    const claimNumber = String(claim.number ?? "");
+    return (
+      claimDisplayName.includes(normalizedRosterSearchQuery) ||
+      claimNumber.includes(normalizedRosterSearchQuery)
+    );
+  });
+  const hasActiveRosterFilters =
+    normalizedRosterSearchQuery.length > 0 || memberFilter !== "all" || itemClaimFilter !== "all";
+
   return (
     <SketchCard
       className={`entry-card compact-card roster-card sketch-entry-card${isGraphOpen ? " roster-card--with-graphs" : ""}`}
@@ -1020,6 +1112,7 @@ function FullRoster({
             <h2>Attendee List</h2>
             <p className="roster-card-subtitle">
               {claims.length} attendee{claims.length === 1 ? "" : "s"}
+              {hasActiveRosterFilters ? ` • ${filteredClaims.length} shown` : ""}
               {showPreclaimQueue ? ` • ${queueEntriesWithProjectedNumbers.length} queued` : ""}
             </p>
           </div>
@@ -1053,10 +1146,38 @@ function FullRoster({
             panelClassName={isGraphOpen ? "roster-graphs-panel--open" : "roster-graphs-panel--closing"}
           />
         ) : null}
+        <div className="roster-filter-row" role="group" aria-label="Attendee filters">
+          <SketchSearchInput
+            className="roster-filter-search"
+            placeholder="Search attendee or number"
+            value={rosterSearchQuery}
+            onChange={(event) => setRosterSearchQuery(event.target.value)}
+          />
+          <SketchCombo
+            className="roster-filter-combo"
+            fullWidth
+            selected={memberFilter}
+            onChange={(event) => setMemberFilter(event.target.value)}
+          >
+            <wired-item value="all">All attendees</wired-item>
+            <wired-item value="member">Members only</wired-item>
+            <wired-item value="non-member">Non-members only</wired-item>
+          </SketchCombo>
+          <SketchCombo
+            className="roster-filter-combo"
+            fullWidth
+            selected={itemClaimFilter}
+            onChange={(event) => setItemClaimFilter(event.target.value)}
+          >
+            <wired-item value="all">All claim states</wired-item>
+            <wired-item value="claimed">Gotten items</wired-item>
+            <wired-item value="unclaimed">No items yet</wired-item>
+          </SketchCombo>
+        </div>
       </div>
       {claims.length ? (
         <div className="roster-list roster-list--attendees" role="list">
-          {claims.map((claim) => {
+          {filteredClaims.length ? filteredClaims.map((claim) => {
             const avatarLabel = claim.displayName?.trim()?.charAt(0)?.toUpperCase() || "?";
 
             return (
@@ -1081,12 +1202,24 @@ function FullRoster({
                     <span>{claim.displayName}</span>
                   </div>
                   <div className="roster-meta">
-                    <span className="roster-badge">Items: {claim.itemsClaimedCount}</span>
-                    <span
-                      className={`roster-badge ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                    <SketchCard
+                      className="roster-badge roster-badge--items roster-badge--sketch"
+                      elevation={1}
+                      fill="#f2f4f7"
+                      strokeColor="#111111"
                     >
-                      {claim.isMember ? "Member" : "Not Member"}
-                    </span>
+                      <span className="roster-badge-label">Items: {claim.itemsClaimedCount}</span>
+                    </SketchCard>
+                    <SketchCard
+                      className={`roster-badge roster-badge--sketch ${claim.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                      elevation={1}
+                      fill={claim.isMember ? "#eaf3ff" : "#fff1dc"}
+                      strokeColor="#111111"
+                    >
+                      <span className="roster-badge-label">
+                        {claim.isMember ? "Member" : "Not Member"}
+                      </span>
+                    </SketchCard>
                     {showPreclaimQueue ? (
                       <SketchButton
                         type="button"
@@ -1140,13 +1273,15 @@ function FullRoster({
                       title="Remove number"
                       aria-label={`Remove ${claim.displayName || 'attendee'} (#${claim.number})`}
                     >
-                      ×
+                      <span className="roster-remove-glyph" aria-hidden="true">×</span>
                     </SketchIconButton>
                   </div>
                 </div>
               </SketchCard>
             );
-          })}
+          }) : (
+            <p className="roster-filter-empty">No attendees match the current search/filters.</p>
+          )}
         </div>
       ) : (
         <p>No attendees have claimed a number yet.</p>
@@ -1204,11 +1339,16 @@ function FullRoster({
                       </div>
                       <div className="roster-meta">
                         <span className="roster-badge roster-badge--waiting">Queue {queueIndex + 1}</span>
-                        <span
-                          className={`roster-badge ${queuedAttendee.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                        <SketchCard
+                          className={`roster-badge roster-badge--sketch ${queuedAttendee.isMember ? "roster-badge--member" : "roster-badge--guest"}`}
+                          elevation={1}
+                          fill={queuedAttendee.isMember ? "#eaf3ff" : "#fff1dc"}
+                          strokeColor="#111111"
                         >
-                          {queuedAttendee.isMember ? "Member" : "Not Member"}
-                        </span>
+                          <span className="roster-badge-label">
+                            {queuedAttendee.isMember ? "Member" : "Not Member"}
+                          </span>
+                        </SketchCard>
                         <SketchButton
                           type="button"
                           className="secondary-button roster-inline-action"
@@ -1270,7 +1410,7 @@ function FullRoster({
                           title="Remove from queue"
                           aria-label={`Remove ${queuedAttendee.displayName || "attendee"} from queue`}
                         >
-                          ×
+                          <span className="roster-remove-glyph" aria-hidden="true">×</span>
                         </SketchIconButton>
                       </div>
                     </div>
@@ -1444,8 +1584,8 @@ function ControlPage({
     ? Math.max(0, currentTime - eventStartTimeMs)
     : 0;
   const eventTimerLabel = hasScheduledEventStart
-    ? (isEventStarted ? "Live For:" : "Starts In:")
-    : "Status:";
+    ? (isEventStarted ? "Live For: " : "Starts In: ")
+    : "Status: ";
   const eventTimerValue = hasScheduledEventStart
     ? formatStatusDuration(isEventStarted ? eventElapsedMs : eventCountdownMs)
     : (isEventStarted ? "Live" : "--:--");
@@ -1625,7 +1765,7 @@ function ControlPage({
             <div className="stats-grid">
               <div className="stats-stack">
                 <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
-                  <span>Round:</span>
+                  <span>Round: </span>
                   <strong>{liveState.round}</strong>
                 </SketchCard>
                 <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
@@ -1633,12 +1773,12 @@ function ControlPage({
                   <strong>{eventTimerValue}</strong>
                 </SketchCard>
                 <SketchCard className="stat-card stat-card--compact sketch-entry-card" elevation={1}>
-                  <span>Attendees:</span>
+                  <span>Attendees: </span>
                   <strong>{totalPeopleWithNumbers}</strong>
                 </SketchCard>
               </div>
               <SketchCard className="stat-card stat-card--progress sketch-entry-card" elevation={1}>
-                <span>Round Progress</span>
+                <span>Round Progress </span>
                 <strong>{currentRoundClaimedCount}/{totalPeopleWithNumbers}</strong>
                 <SketchProgress
                   className="stat-progress"
@@ -1908,7 +2048,6 @@ function ControlPage({
                       currentRound={currentRound}
                       emptyText={queueEmptyText}
                       isFinalCall={liveState.finalCall}
-                      isLastGroup={isLastGroup}
                     />
                     {backlogClaims.length > 0 ? (
                       <>
@@ -1969,25 +2108,33 @@ function ControlPage({
 
       {isEventLive ? (
         <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
-          <SketchButton
-            className="bottom-navbar-button"
-            type="button"
-            onClick={onOpenScanner}
-            disabled={scanLoading || !isEventLive}
-          >
-            <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
-            <span>Open Scanner</span>
-          </SketchButton>
-          <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
-            <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
-            <span>Open Display</span>
-          </SketchButton>
+          <div className="bottom-navbar-row">
+            <SketchButton
+              className="bottom-navbar-button"
+              type="button"
+              onClick={onOpenScanner}
+              disabled={scanLoading || !isEventLive}
+            >
+              <div className="bottom-navbar-content">
+                <ScanLine aria-hidden="true" className="button-icon icon-animated icon-animate-scan" />
+                <span>Open Scanner</span>
+              </div>
+            </SketchButton>
+            <SketchButton className="secondary-button bottom-navbar-button" type="button" onClick={onOpenDisplayScreen}>
+              <div className="bottom-navbar-content">
+                <Monitor aria-hidden="true" className="button-icon icon-animated icon-animate-pulse" />
+                <span>Open Display</span>
+              </div>
+            </SketchButton>
+          </div>
         </SketchCard>
       ) : (
         <SketchCard className="bottom-navbar sketch-navbar-card" elevation={1} strokeColor="#111111">
-          <SketchButton className="secondary-button bottom-navbar-button" onClick={onHandleLogout}>
-            Logout
-          </SketchButton>
+          <div className="bottom-navbar-row">
+            <SketchButton className="secondary-button bottom-navbar-button" onClick={onHandleLogout}>
+              Logout
+            </SketchButton>
+          </div>
         </SketchCard>
       )}
       <SketchDialog className="sketch-confirm-dialog" open={confirmDialogState.open} onClose={closeConfirmDialog}>
