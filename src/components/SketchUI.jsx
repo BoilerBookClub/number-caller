@@ -50,7 +50,7 @@ const SketchButton = forwardRef(function SketchButton(
   return (
     <wired-button
       ref={ref}
-      class={className ? `sketch-button ${className}` : "sketch-button"}
+      class={className ? `sketch-button wired-rendered ${className}` : "sketch-button wired-rendered"}
       disabled={disabled}
       onClick={handleClick}
       {...props}
@@ -804,7 +804,7 @@ const SketchIconButton = forwardRef(function SketchIconButton(
   return (
     <wired-icon-button
       ref={ref}
-      class={className ? `sketch-icon-button ${className}` : "sketch-icon-button"}
+      class={className ? `sketch-icon-button wired-rendered ${className}` : "sketch-icon-button wired-rendered"}
       disabled={disabled}
       onClick={onClick}
       {...props}
