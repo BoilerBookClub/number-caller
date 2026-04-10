@@ -25,7 +25,7 @@ export const parseClaimRulesList = (value) => {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => line.replace(/^(\d+[\).\s-]+|[-*]\s+)/, "").trim())
+    .map((line) => line.replace(/^(\d+[).\s-]+|[-*]\s+)/, "").trim())
     .filter(Boolean);
 
   return parsedLines.length ? parsedLines : [...DEFAULT_CLAIM_RULE_LINES];
