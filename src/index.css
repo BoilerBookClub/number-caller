@@ -1,15 +1,172 @@
 :root {
+  /* The gap the fixed bottom navbar holds off the foot of the viewport, and the
+     home-indicator inset underneath it. Both the bar's own offset and the room
+     reserved for it are built from these, so the two can never drift apart.
+     env() reports 0px off a notched device, and its own fallback covers the
+     browsers that do not implement it at all. 0.75rem matches the side gap the
+     navbar holds off the viewport edges at full width (.bottom-navbar's
+     `max-width: min(calc(100vw - 1.5rem), 58rem)`, split evenly by its auto
+     inline margins), so the bar reads as evenly inset on three sides. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --bottom-navbar-offset: calc(0.75rem + var(--safe-bottom));
+
+  /* The other three edges, for the overlays that go full bleed. index.html asks
+     for viewport-fit=cover, so a `position: fixed; inset: 0` overlay paints into
+     the notch and the home indicator rather than stopping short of them — every
+     such overlay pads itself off these instead of off nothing. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* A vertically centred overlay clears the taller of the two insets at both
+     ends, because centring spends whatever it is given evenly. */
+  --safe-centered: max(var(--safe-top), var(--safe-bottom));
+
+  /*
+   * How wide a child of a wired-dialog may be.
+   *
+   * wired-dialog slots its content into a box padded 5px a side, inside a
+   * wired-card that pads 10px more — so a panel sized against 100vw comes out
+   * 30px wider than the screen. The overflow all lands on one side (the card is
+   * an inline-block, and a line box cannot centre something wider than itself),
+   * taking the right-hand drawn border off the screen with it. The extra 14px
+   * on top of the 30 is for the stroke, which wanders a few pixels outside the
+   * box wired-card was given.
+   */
+  --dialog-content-width: calc(100vw - 2.75rem);
+
+  /* Footprint of the fixed bottom navbar. Anything that would otherwise sit
+     underneath it reserves this much room, so a copy change to the nav buttons
+     cannot silently cause an overlap. */
+  --bottom-navbar-clearance: calc(6.5rem + var(--safe-bottom));
+
+  /*
+   * The stacking order, in one place.
+   *
+   * Read top to bottom, this is the order things cover each other in: the nav
+   * bar is the floor, the confirm dialog is the ceiling. Every layer gets its
+   * own step — two of these used to share a value and resolved on source order,
+   * which held only for as long as no two of them opened at once.
+   *
+   * The scanner's status mark has to outrank the scanner's own modal: it is the
+   * feedback for the thing that modal is doing, and the attendee's own copy of
+   * that mark outranks the page it is raised over for the same reason. Both overlays outrank the
+   * transient overflow popovers — the roster row's "..." menu and the header's,
+   * which share one step because neither can be open while the other is: a
+   * pointer-down anywhere outside a menu dismisses it, including the one that
+   * opens the other. The confirm dialog outranks everything, because it can be
+   * raised from inside any of them.
+   */
+  --z-bottom-navbar: 950;
+  --z-dialog-roster: 980;
+  --z-dialog: 990;
+  --z-overflow-menu: 1000;
+  --z-scanner-modal: 1010;
+  --z-scanner-status: 1020;
+  --z-graph-overlay: 1030;
+  --z-past-events-overlay: 1040;
+  /* Over the ticket and anything raised from it, because it is the answer to
+     the thing the attendee was holding the phone up for. Under the confirm
+     dialog, which nothing may cover. */
+  --z-claim-marked: 1200;
+  --z-confirm-dialog: 1400;
+
+  /* The page fade's two ends. Named so the bottom navbar's own fade (App.css)
+     can be pinned to the same colours instead of carrying a second, driftable
+     copy of them. useOverscrollBackground.js keeps its own RGB copies of both
+     — CSS custom properties cannot be read back as numbers to interpolate — so
+     a change here has to be mirrored there too. */
+  --page-fade-top: #fef9ef;
+  --page-fade-bottom: #f6fbff;
+
+  /* The colour behind the bottom navbar's fade, at the viewport position it
+     currently sits over. useOverscrollBackground.js sets it as the page
+     scrolls — on each .bottom-navbar-fade element rather than here, because a
+     custom property written to the root is a change every element in the
+     document has to be re-resolved against, and this one is written on every
+     frame of every scroll. What is declared here is only the pre-JS/no-JS
+     fallback, which is why it matches the bottom stop — the common case is a
+     page short enough that its foot is already sitting on that stop. */
+  --bottom-navbar-fade-color: var(--page-fade-bottom);
+
+  /* How far the navbar's fade hangs past the foot of the viewport.
+     `bottom: 0` on a fixed box anchors to the *layout* viewport, which on a
+     phone stays the size it was while the browser's toolbar was showing — so
+     once that toolbar retracts, the strip it vacated sits below the fade's own
+     bottom edge with nothing but scrolling content in it. Sub-pixel rounding
+     of the fixed layer opens the same seam a hairline at a time on a desktop
+     with a fractional device pixel ratio. Neither is worth chasing exactly:
+     the fade is already flat colour by the time it gets there, so it just runs
+     on past the edge and lets the browser clip it. 6rem clears every mobile
+     toolbar we have seen, and costs nothing — a fixed box adds no scrollable
+     overflow, so none of this can be scrolled to. */
+  --bottom-navbar-fade-overshoot: 6rem;
+
+  /*
+   * How far Caveat's ink runs past the end of the text it is measured as.
+   *
+   * A handwriting face draws its letters leaning and looping out of their own
+   * advance widths: the tail of an R, the bowl of a P, the flourish on a Y all
+   * paint a couple of pixels to the right of where the layout says the word
+   * ends. Any box clipped to that measured width — an `overflow: hidden` put
+   * there to hold an ellipsis — slices those strokes off flat, and at these
+   * sizes it reads as a letter with its right-hand side missing rather than as
+   * a crop. Every such box gives the ink this much extra room to paint into,
+   * paid for with padding and taken back off with a matching negative margin,
+   * so the clip moves without the layout following it.
+   *
+   * 0.25em against a measured worst case of 0.16em (uppercase DISPLAY at the
+   * navbar's weight), which leaves room for wording we have not set yet.
+   */
+  --label-ink-overhang: 0.25em;
+
   font-family: "Caveat", cursive;
   line-height: 1.5;
   font-weight: 400;
 
   color: #0f1720;
-  background: linear-gradient(180deg, #fef9ef 0%, #f6fbff 100%);
+
+  /* The page fade, extended past both ends of the document so the rubber-band
+     overscroll has nothing white to reveal behind it.
+     The root element's background is what paints the canvas, including the
+     overhang a bounce exposes — but the gradient itself is only sized to the
+     document, so past that edge the browser fell back to white. Rather than
+     drop the bounce, the image is made three documents tall with the fade
+     confined to the middle third: the outer thirds are flat runs of each end
+     colour, so a bounce in either direction lands on the colour already there.
+     Sized this way the middle third lines up exactly with the document, so the
+     fade renders pixel-for-pixel as before — including under `body`, which
+     paints the same gradient over its own box for the case where a modal fixes
+     it and collapses this element's height.
+
+     The background-colour is separate from that: the browser paints a bounce's
+     overhang with the colour alone, never the image, so it is the only thing
+     visible out there. useOverscrollBackground swaps it for the bottom stop
+     past the halfway mark — see the rule below. */
+  background-color: var(--page-fade-top);
+  background-image: linear-gradient(
+    180deg,
+    var(--page-fade-top) 0%,
+    var(--page-fade-top) 33.333%,
+    var(--page-fade-bottom) 66.667%,
+    var(--page-fade-bottom) 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 300%;
+  background-position: center;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Set by useOverscrollBackground once the viewport's centre passes the document's:
+   from there the bottom is the only end a bounce can reach, so the overhang wears
+   the gradient's bottom stop instead of its top one. Only ever seen in that
+   overhang — the gradient itself covers every pixel of the document. */
+:root.page-past-middle {
+  background-color: var(--page-fade-bottom);
 }
 
 *,
@@ -34,7 +191,8 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(180deg, #fef9ef 0%, #f6fbff 100%);
+  min-height: 100dvh;
+  background: linear-gradient(180deg, var(--page-fade-top) 0%, var(--page-fade-bottom) 100%);
 }
 
 h1 {
@@ -59,4 +217,23 @@ button:hover {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/*
+ * Scrollbars are hidden throughout: the content still scrolls by wheel, trackpad,
+ * touch and keyboard, but nothing is drawn. wired-elements has no scrollbar
+ * component, and a native bar sat awkwardly against the hand-drawn borders.
+ *
+ * The scroll cue at the foot of the create-event panel exists because of this —
+ * with no visible bar, that chevron is the signal that there is more below.
+ */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }

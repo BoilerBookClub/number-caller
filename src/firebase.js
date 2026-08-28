@@ -6,18 +6,32 @@ import {
 } from "firebase/auth";
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
   getFirestore,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   runTransaction,
   serverTimestamp,
-  setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { createClaimQrToken } from "./claimQr";
+import { connectAuthEmulator } from "firebase/auth";
+import { connectFirestoreEmulator } from "firebase/firestore";
+import { connectFunctionsEmulator, getFunctions, httpsCallable } from "firebase/functions";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+
+import {
+  applyStateChanges,
+  getStateChanges,
+  hasUnchangedStateFields,
+  normalizeState,
+} from "./eventState.js";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -37,32 +51,96 @@ const requiredConfig = [
 
 export const firebaseEnabled = requiredConfig.every(Boolean);
 
-// Debug: surface config presence to the browser console for local debugging.
-try {
-  // Only run in browser environments where `console` is available.
-  // Log which Vite vars are present (avoid printing secret values).
-  // This helps diagnose "Connecting to live event…" hangs caused by missing env or blocked network.
-   
-  console.debug("Firebase config present?", {
-    apiKey: Boolean(firebaseConfig.apiKey),
-    authDomain: Boolean(firebaseConfig.authDomain),
-    projectId: Boolean(firebaseConfig.projectId),
-    appId: Boolean(firebaseConfig.appId),
-    firebaseEnabled,
-  });
-} catch {
-  // ignore in non-browser runtimes
-}
 const app = firebaseEnabled ? initializeApp(firebaseConfig) : null;
+
+/**
+ * App Check attests that requests come from this app rather than a script.
+ *
+ * Opt-in by design: set VITE_FIREBASE_APPCHECK_SITE_KEY once the reCAPTCHA v3
+ * key is registered. Turning it on here only makes the client *send* tokens —
+ * the functions keep accepting requests without them until you separately set
+ * ENFORCE_APP_CHECK=true, so you can watch the App Check metrics in the console
+ * and confirm real traffic is verified before anything starts getting rejected.
+ */
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
+
+if (app && appCheckSiteKey) {
+  try {
+    // Lets a developer machine mint a debug token instead of solving reCAPTCHA.
+    if (import.meta.env.DEV) {
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+
+    initializeAppCheck(app, {
+      isTokenAutoRefreshEnabled: true,
+      provider: new ReCaptchaV3Provider(appCheckSiteKey),
+    });
+  } catch (error) {
+    // Never let attestation setup stop an attendee from claiming a number.
+    console.error("App Check setup failed:", error?.message || error);
+  }
+}
 export const auth = firebaseEnabled ? getAuth(app) : null;
 export const db = firebaseEnabled ? getFirestore(app) : null;
 const functions = firebaseEnabled ? getFunctions(app) : null;
+
+/**
+ * Point everything at the local emulator suite.
+ *
+ * Set VITE_USE_FIREBASE_EMULATORS=true in .env.local and run `npm run emulators`
+ * to work against local Firestore, Auth and Functions — no live project, no real
+ * attendees, and rules changes take effect on save.
+ */
+if (firebaseEnabled && import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true") {
+  const emulatorHost = import.meta.env.VITE_FIREBASE_EMULATOR_HOST || "127.0.0.1";
+
+  connectFirestoreEmulator(db, emulatorHost, 8080);
+  connectFunctionsEmulator(functions, emulatorHost, 5001);
+  connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+
+  console.warn(`Firebase is using local emulators at ${emulatorHost}.`);
+}
 const liveStateRef = firebaseEnabled
   ? doc(db, "events", "live-number-caller")
   : null;
-const displayFeedRef = firebaseEnabled
-  ? doc(db, "events", "live-number-caller", "public", "display-feed")
+// How many activity items the display shows.
+const DISPLAY_FEED_LIMIT = 5;
+
+// Staff-only. Kept out of the live event document, which is publicly readable.
+const claimAccessRef = firebaseEnabled
+  ? doc(db, "events", "live-number-caller", "private", "claim-access")
   : null;
+const displayFeedCollectionRef = firebaseEnabled
+  ? collection(db, "events", "live-number-caller", "feed")
+  : null;
+
+/*
+ * The newest few activity items *for this event*.
+ *
+ * The eventId filter is the second fence rather than the first: the feed is
+ * emptied when an event closes and when the event id changes, so in the
+ * ordinary case there is nothing in here that belongs to anybody else. The case
+ * it exists for is a close that failed part way, which is precisely the case
+ * where the leftovers are last event's attendees — names and avatars — and the
+ * place they would surface is a projector in front of a room.
+ *
+ * Items written before the field existed carry no eventId and so drop out of
+ * this query. That is the right way round: an item old enough to predate the
+ * stamp is old enough not to belong on the current event's display.
+ */
+const buildDisplayFeedQuery = (eventId) =>
+  eventId
+    ? query(
+        displayFeedCollectionRef,
+        where("eventId", "==", eventId),
+        orderBy("timestampMs", "desc"),
+        limit(DISPLAY_FEED_LIMIT),
+      )
+    : query(
+        displayFeedCollectionRef,
+        orderBy("timestampMs", "desc"),
+        limit(DISPLAY_FEED_LIMIT),
+      );
 
 export const buildClaimId = (eventId, claimKey) =>
   `${eventId}__${encodeURIComponent(claimKey)}`;
@@ -73,18 +151,17 @@ const getClaimRef = (claimId) =>
 const claimsCollectionRef = firebaseEnabled
   ? collection(db, "events", "live-number-caller", "claims")
   : null;
-const exchangeDiscordAccessTokenCallable = firebaseEnabled
-  ? httpsCallable(functions, "exchangeDiscordAccessToken")
+const exchangeDiscordAuthCodeCallable = firebaseEnabled
+  ? httpsCallable(functions, "exchangeDiscordAuthCode")
+  : null;
+const refreshTrustedSessionCallable = firebaseEnabled
+  ? httpsCallable(functions, "refreshTrustedSession")
   : null;
 const assignPreclaimIfQueuedCallable = firebaseEnabled
   ? httpsCallable(functions, "assignPreclaimIfQueued")
   : null;
-const listPreclaimsCallable = firebaseEnabled ? httpsCallable(functions, "listPreclaims") : null;
 const assignPreclaimAsStaffCallable = firebaseEnabled ? httpsCallable(functions, "assignPreclaimAsStaff") : null;
 const removePreclaimAsStaffCallable = firebaseEnabled ? httpsCallable(functions, "removePreclaimAsStaff") : null;
-const refreshPreclaimMembershipAsStaffCallable = firebaseEnabled
-  ? httpsCallable(functions, "refreshPreclaimMembershipAsStaff")
-  : null;
 const refreshAllPreclaimMembershipsAsStaffCallable = firebaseEnabled
   ? httpsCallable(functions, "refreshAllPreclaimMembershipsAsStaff")
   : null;
@@ -95,16 +172,57 @@ const moveClaimBackToQueueAsStaffCallable = firebaseEnabled
 const redeemClaimByQrAsStaffCallable = firebaseEnabled
   ? httpsCallable(functions, "redeemClaimByQrAsStaff")
   : null;
-const readPreclaimForUserCallable = firebaseEnabled
-  ? httpsCallable(functions, "readPreclaimForUser")
+const redeemRaffleByQrAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "redeemRaffleByQrAsStaff")
+  : null;
+const joinRaffleAsAttendeeCallable = firebaseEnabled
+  ? httpsCallable(functions, "joinRaffleAsAttendee")
+  : null;
+const claimNumberAsAttendeeCallable = firebaseEnabled
+  ? httpsCallable(functions, "claimNumberAsAttendee")
+  : null;
+const joinQueueAsAttendeeCallable = firebaseEnabled
+  ? httpsCallable(functions, "joinQueueAsAttendee")
+  : null;
+const fetchLatestAnnouncementCallable = firebaseEnabled
+  ? httpsCallable(functions, "fetchLatestAnnouncement")
+  : null;
+const listArchivedEventsCallable = firebaseEnabled
+  ? httpsCallable(functions, "listArchivedEvents")
+  : null;
+const readArchivedEventCallable = firebaseEnabled
+  ? httpsCallable(functions, "readArchivedEvent")
+  : null;
+const seedDemoParticipantsAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "seedDemoParticipantsAsStaff")
+  : null;
+const assignQueuedDemoParticipantsAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "assignQueuedDemoParticipantsAsStaff")
+  : null;
+const redeemDemoClaimAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "redeemDemoClaimAsStaff")
+  : null;
+const joinRaffleAsDemoParticipantAsStaffCallable = firebaseEnabled
+  ? httpsCallable(functions, "joinRaffleAsDemoParticipantAsStaff")
+  : null;
+const deleteArchivedEventCallable = firebaseEnabled
+  ? httpsCallable(functions, "deleteArchivedEvent")
   : null;
 
-export const signInWithDiscordAccessToken = async ({ accessToken }) => {
-  if (!firebaseEnabled || !auth || !exchangeDiscordAccessTokenCallable) {
+/**
+ * Trades a Discord authorization code for a Firebase session.
+ *
+ * The code and the PKCE verifier are the only credentials that leave the
+ * browser, and neither is reusable: the code is single-use and the exchange
+ * needs a client secret this app does not have. Nothing Discord-issued comes
+ * back — only a Firebase custom token and the display profile.
+ */
+export const signInWithDiscordAuthCode = async ({ code, codeVerifier, redirectUri }) => {
+  if (!firebaseEnabled || !auth || !exchangeDiscordAuthCodeCallable) {
     throw new Error("Firebase is not configured.");
   }
 
-  const result = await exchangeDiscordAccessTokenCallable({ accessToken });
+  const result = await exchangeDiscordAuthCodeCallable({ code, codeVerifier, redirectUri });
   const firebaseCustomToken = result.data?.firebaseCustomToken;
   const profile = result.data?.profile;
 
@@ -121,6 +239,34 @@ export const signInWithDiscordAccessToken = async ({ accessToken }) => {
   return profile;
 };
 
+/**
+ * Re-checks the signed-in user's Discord roles and reissues their session.
+ *
+ * Runs on page load in place of the old "replay the stored access token"
+ * step. The server does the role lookup with its bot credentials, so a role
+ * change still lands within a session without the browser holding anything of
+ * Discord's.
+ */
+export const refreshTrustedSession = async () => {
+  if (!firebaseEnabled || !auth || !refreshTrustedSessionCallable) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  const result = await refreshTrustedSessionCallable({});
+  const firebaseCustomToken = result.data?.firebaseCustomToken;
+
+  if (typeof firebaseCustomToken !== "string" || !firebaseCustomToken) {
+    throw new Error("Unable to refresh trusted Firebase access.");
+  }
+
+  await signInWithCustomToken(auth, firebaseCustomToken);
+
+  return {
+    hasFullAccess: Boolean(result.data?.hasFullAccess),
+    isMember: Boolean(result.data?.isMember),
+  };
+};
+
 export const assignPreclaimIfQueued = async ({ eventId, claimKey }) => {
   if (!firebaseEnabled || !assignPreclaimIfQueuedCallable) {
     throw new Error("Firebase functions not configured.");
@@ -129,26 +275,6 @@ export const assignPreclaimIfQueued = async ({ eventId, claimKey }) => {
   const result = await assignPreclaimIfQueuedCallable({ eventId, claimKey });
 
   return result.data;
-};
-
-export const readPreclaimForUser = async ({ eventId, claimKey }) => {
-  if (!firebaseEnabled || !readPreclaimForUserCallable) {
-    throw new Error("Firebase functions not configured.");
-  }
-
-  const result = await readPreclaimForUserCallable({ eventId, claimKey });
-
-  return result.data;
-};
-
-export const readAllPreclaims = async () => {
-  if (!firebaseEnabled || !listPreclaimsCallable) {
-    throw new Error("Firebase functions not configured.");
-  }
-
-  const result = await listPreclaimsCallable({});
-
-  return result.data?.preclaims ?? [];
 };
 
 export const assignPreclaimAsStaff = async ({ preclaimId }) => {
@@ -167,16 +293,6 @@ export const removePreclaimAsStaff = async ({ preclaimId }) => {
   }
 
   const result = await removePreclaimAsStaffCallable({ preclaimId });
-
-  return result.data;
-};
-
-export const refreshPreclaimMembershipAsStaff = async ({ preclaimId }) => {
-  if (!firebaseEnabled || !refreshPreclaimMembershipAsStaffCallable) {
-    throw new Error("Firebase functions not configured.");
-  }
-
-  const result = await refreshPreclaimMembershipAsStaffCallable({ preclaimId });
 
   return result.data;
 };
@@ -250,45 +366,177 @@ export const getScreenUrl = (mode) => {
   return url.toString();
 };
 
+/**
+ * The rotating check-in secret, used by the display to build its QR code.
+ * Staff-only: attendees have no reason to hold the secret, and letting them
+ * would make the display QR code forgeable from anywhere.
+ */
+export const subscribeToClaimAccessSecret = ({ onSecret, onError }) => {
+  if (!firebaseEnabled) {
+    return () => {};
+  }
+
+  return onSnapshot(
+    claimAccessRef,
+    (snapshot) => {
+      const secret = snapshot.exists() ? snapshot.data()?.secret : "";
+      onSecret(typeof secret === "string" ? secret : "");
+    },
+    onError,
+  );
+};
+
+/**
+ * Watches a document or query, falling back to polling if the watch stream dies.
+ *
+ * These subscriptions were all rewritten as polling loops to dodge an
+ * intermittent Firestore watch-stream assertion ("Unexpected state", ids like
+ * ca9/b815) seen during rapid claim/preclaim create-delete churn. Polling made
+ * that impossible to hit, but it cost a read per document per interval — the
+ * control panel alone re-read every claim ever created, roughly seventy times a
+ * second.
+ *
+ * A listener is the right shape, so use one; if it errors we degrade to the old
+ * polling behaviour rather than leaving the screen frozen mid-event. The SDK bug
+ * is several majors old at this point, so the fallback should stay cold.
+ */
+/**
+ * How many polls to serve before trying the listener again.
+ *
+ * Falling back used to be one-way: a single watch error put a device on a
+ * 1,200ms poll of two documents for the rest of the session, about 1.7 reads a
+ * second. One transient blip is not usually one device's blip — a saturated
+ * venue network drops the whole room at once — so three hundred devices would
+ * come out of it polling, roughly 500 reads a second, all evening, for
+ * documents that change a handful of times per attendee.
+ *
+ * Retrying the listener costs one attempt every ~24 seconds per subscription
+ * and, when it attaches, ends the polling for good.
+ */
+const POLLS_BEFORE_RETRYING_WATCH = 20;
+
+const subscribeWithPollingFallback = ({
+  onData,
+  onError,
+  pollIntervalMs,
+  readOnce,
+  watch,
+}) => {
+  let isDisposed = false;
+  let stopWatching = null;
+  let timeoutId = null;
+  let pollsSinceWatchAttempt = 0;
+
+  const handleValue = (value) => {
+    if (!isDisposed) {
+      onData(value);
+    }
+  };
+
+  const startPolling = () => {
+    const poll = async () => {
+      if (isDisposed) {
+        return;
+      }
+
+      try {
+        /* Through handleValue, not onData directly: the await below is a
+           network round trip, and a subscription disposed while it was in
+           flight would otherwise still deliver into an unmounted screen. */
+        handleValue(await readOnce());
+      } catch (error) {
+        if (!isDisposed && typeof onError === "function") {
+          onError(error);
+        }
+      }
+
+      if (isDisposed) {
+        return;
+      }
+
+      pollsSinceWatchAttempt += 1;
+
+      if (pollsSinceWatchAttempt >= POLLS_BEFORE_RETRYING_WATCH) {
+        pollsSinceWatchAttempt = 0;
+        // Stop the timer before attaching. If the listener holds it will start
+        // delivering on its own, and a poll loop still running alongside it is
+        // the cost this exists to remove; if it fails, its error handler starts
+        // a fresh one.
+        timeoutId = null;
+        attachWatch();
+        return;
+      }
+
+      timeoutId = window.setTimeout(() => {
+        void poll();
+      }, pollIntervalMs);
+    };
+
+    void poll();
+  };
+
+  function attachWatch() {
+    if (isDisposed) {
+      return;
+    }
+
+    stopWatching = watch(handleValue, (error) => {
+      if (isDisposed) {
+        return;
+      }
+
+      console.warn("Live listener failed; falling back to polling.", error?.message || error);
+      stopWatching = null;
+      startPolling();
+    });
+  }
+
+  attachWatch();
+
+  return () => {
+    isDisposed = true;
+
+    if (stopWatching) {
+      stopWatching();
+    }
+
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  };
+};
+
+/**
+ * The live event, which every screen in the app is derived from.
+ *
+ * Routed through the polling fallback like the claim and roster subscriptions,
+ * which it was not before. It is the single most important listener there is —
+ * it carries the called number, so it is what turns an attendee's ticket over —
+ * and it was the one with no recovery path: a bare onSnapshot whose error
+ * handler only logged. The SDK retries transient stream failures itself, so this
+ * only bites on a terminal one, but when it did the page froze on stale state
+ * for the rest of the evening with nothing on screen to say so.
+ *
+ * Polled slower than the claim subscriptions when it is degraded. This is one
+ * document and the fallback is a degraded mode, not the normal one; at three
+ * hundred devices a fast poll here is the stampede the fallback exists to avoid.
+ */
 export const subscribeToLiveEvent = ({ onEvent, onError }) => {
   if (!firebaseEnabled) {
     return () => {};
   }
 
-  // Wrap handlers with debug logs to make subscription state visible in browser console.
-  const wrappedOnEvent = (snapshot) => {
-    try {
-       
-      console.debug("subscribeToLiveEvent: snapshot received", { exists: snapshot.exists });
-    } catch {
-      // ignore
-    }
-
-    if (!snapshot.exists) {
-      onEvent(null);
-      return;
-    }
-
-    onEvent(snapshot.data());
-  };
-
-  const wrappedOnError = (err) => {
-     
-    console.error("subscribeToLiveEvent: error", err && (err.message || err));
-    if (typeof onError === "function") onError(err);
-  };
-
-  return onSnapshot(liveStateRef, wrappedOnEvent, wrappedOnError);
-};
-
-export const readLiveEventOnce = async () => {
-  if (!firebaseEnabled) {
-    return null;
-  }
-
-  const snapshot = await getDoc(liveStateRef);
-
-  return snapshot.exists() ? snapshot.data() : null;
+  return subscribeWithPollingFallback({
+    onData: onEvent,
+    onError,
+    pollIntervalMs: 5000,
+    readOnce: async () => {
+      const snapshot = await getDoc(liveStateRef);
+      return snapshot.exists() ? snapshot.data() : null;
+    },
+    watch: (next, fail) =>
+      onSnapshot(liveStateRef, (snapshot) => next(snapshot.exists() ? snapshot.data() : null), fail),
+  });
 };
 
 export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
@@ -296,45 +544,58 @@ export const subscribeToClaim = ({ claimId, onClaim, onError }) => {
     return () => {};
   }
 
-  // Workaround for an intermittent Firestore watch-stream internal assertion
-  // (`Unexpected state` IDs such as ca9/b815) observed during rapid claim/preclaim
-  // create/delete flows. Polling avoids that watch edge case.
-  let isDisposed = false;
-  let timeoutId = null;
+  const claimRef = getClaimRef(claimId);
 
-  const poll = async () => {
-    if (isDisposed) {
-      return;
-    }
+  return subscribeWithPollingFallback({
+    onData: onClaim,
+    onError,
+    pollIntervalMs: 1200,
+    readOnce: async () => {
+      const snapshot = await getDoc(claimRef);
+      return snapshot.exists() ? snapshot.data() : null;
+    },
+    watch: (next, fail) =>
+      onSnapshot(claimRef, (snapshot) => next(snapshot.exists() ? snapshot.data() : null), fail),
+  });
+};
 
-    try {
-      const snapshot = await getDoc(getClaimRef(claimId));
-      if (isDisposed) {
-        return;
-      }
+const preclaimsCollectionRef = firebaseEnabled
+  ? collection(db, "events", "live-number-caller", "preclaims")
+  : null;
 
-      onClaim(snapshot.exists() ? snapshot.data() : null);
-    } catch (error) {
-      if (!isDisposed && typeof onError === "function") {
-        onError(error);
-      }
-    } finally {
-      if (!isDisposed) {
-        timeoutId = window.setTimeout(() => {
-          void poll();
-        }, 1200);
-      }
-    }
-  };
+/**
+ * The pre-event queue, live.
+ *
+ * Staff-only by security rule, like the roster. This replaced a five-second
+ * poll of the listPreclaims callable: every tick cost a function invocation and
+ * a read of the entire queue, per staff tab, for a list that changes a handful
+ * of times a minute. Same shape as subscribeToClaims, including the polling
+ * fallback if the watch stream ever gives out mid-event.
+ */
+export const subscribeToPreclaims = ({ eventId, onPreclaims, onError }) => {
+  if (!firebaseEnabled) {
+    return () => {};
+  }
 
-  void poll();
+  // Scoped to the live event, so a close that failed part way cannot put last
+  // event's leftovers in front of staff as if they were waiting in this one.
+  const preclaimsQuery = eventId
+    ? query(preclaimsCollectionRef, where("eventId", "==", eventId))
+    : preclaimsCollectionRef;
+  const toPreclaimList = (snapshot) =>
+    snapshot.docs.map((preclaimDoc) => ({
+      preclaimId: preclaimDoc.id,
+      ...preclaimDoc.data(),
+    }));
 
-  return () => {
-    isDisposed = true;
-    if (timeoutId !== null) {
-      window.clearTimeout(timeoutId);
-    }
-  };
+  return subscribeWithPollingFallback({
+    onData: onPreclaims,
+    onError,
+    pollIntervalMs: 5000,
+    readOnce: async () => toPreclaimList(await getDocs(preclaimsQuery)),
+    watch: (next, fail) =>
+      onSnapshot(preclaimsQuery, (snapshot) => next(toPreclaimList(snapshot)), fail),
+  });
 };
 
 export const readPreclaimOnce = async ({ claimId }) => {
@@ -354,62 +615,44 @@ export const subscribeToPreclaim = ({ claimId, onPreclaim, onError }) => {
   }
 
   const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
-  let isDisposed = false;
-  let timeoutId = null;
 
-  const poll = async () => {
-    if (isDisposed) {
-      return;
-    }
-
-    try {
+  return subscribeWithPollingFallback({
+    onData: onPreclaim,
+    onError,
+    pollIntervalMs: 1200,
+    readOnce: async () => {
       const snapshot = await getDoc(preclaimRef);
-      if (isDisposed) {
-        return;
-      }
-
-      onPreclaim(snapshot.exists() ? snapshot.data() : null);
-    } catch (error) {
-      if (!isDisposed && typeof onError === "function") {
-        onError(error);
-      }
-    } finally {
-      if (!isDisposed) {
-        timeoutId = window.setTimeout(() => {
-          void poll();
-        }, 1200);
-      }
-    }
-  };
-
-  void poll();
-
-  return () => {
-    isDisposed = true;
-    if (timeoutId !== null) {
-      window.clearTimeout(timeoutId);
-    }
-  };
+      return snapshot.exists() ? snapshot.data() : null;
+    },
+    watch: (next, fail) =>
+      onSnapshot(preclaimRef, (snapshot) => next(snapshot.exists() ? snapshot.data() : null), fail),
+  });
 };
 
-export const subscribeToDisplayFeed = ({ onFeed, onError }) => {
+/**
+ * Newest activity items. Each item is its own document now — the feed used to be
+ * a single array document rewritten in a transaction on every claim, which
+ * serialised the whole room's check-ins behind one contended write.
+ */
+export const subscribeToDisplayFeed = ({ eventId, onFeed, onError }) => {
   if (!firebaseEnabled) {
     return () => {};
   }
 
-  return onSnapshot(
-    displayFeedRef,
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onFeed([]);
-        return;
-      }
+  const displayFeedQuery = buildDisplayFeedQuery(eventId);
+  const toFeedList = (snapshot) =>
+    snapshot.docs.map((feedDoc) => ({ id: feedDoc.id, ...feedDoc.data() }));
 
-      const feedItems = snapshot.data()?.items;
-      onFeed(Array.isArray(feedItems) ? feedItems : []);
-    },
+  /* Slow, and deliberately the slowest fallback here: the feed is decoration on
+     the projector. A frozen one costs nobody their number, so it is not worth
+     five documents a second of a venue network to keep it current. */
+  return subscribeWithPollingFallback({
+    onData: onFeed,
     onError,
-  );
+    pollIntervalMs: 10000,
+    readOnce: async () => toFeedList(await getDocs(displayFeedQuery)),
+    watch: (next, fail) => onSnapshot(displayFeedQuery, (snapshot) => next(toFeedList(snapshot)), fail),
+  });
 };
 
 export const readClaimOnce = async ({ claimId }) => {
@@ -422,57 +665,47 @@ export const readClaimOnce = async ({ claimId }) => {
   return snapshot.exists() ? snapshot.data() : null;
 };
 
-export const subscribeToClaims = ({ onClaims, onError }) => {
+export const subscribeToClaims = ({ eventId, onClaims, onError }) => {
   if (!firebaseEnabled) {
     return () => {};
   }
 
-  let isDisposed = false;
-  let timeoutId = null;
+  // Scoped to the live event. The unfiltered read also pulled in every claim
+  // from every past event, which is unbounded over the life of the project.
+  const claimsQuery = eventId
+    ? query(claimsCollectionRef, where("eventId", "==", eventId))
+    : claimsCollectionRef;
+  const toClaimList = (snapshot) =>
+    snapshot.docs.map((claimDoc) => ({ claimId: claimDoc.id, ...claimDoc.data() }));
 
-  const poll = async () => {
-    if (isDisposed) {
-      return;
-    }
-
-    try {
-      const snapshot = await getDocs(claimsCollectionRef);
-      if (isDisposed) {
-        return;
-      }
-
-      onClaims(
-        snapshot.docs.map((claimDoc) => ({
-          claimId: claimDoc.id,
-          ...claimDoc.data(),
-        })),
-      );
-    } catch (error) {
-      if (!isDisposed && typeof onError === "function") {
-        onError(error);
-      }
-    } finally {
-      if (!isDisposed) {
-        timeoutId = window.setTimeout(() => {
-          void poll();
-        }, 1400);
-      }
-    }
-  };
-
-  void poll();
-
-  return () => {
-    isDisposed = true;
-    if (timeoutId !== null) {
-      window.clearTimeout(timeoutId);
-    }
-  };
+  return subscribeWithPollingFallback({
+    onData: onClaims,
+    onError,
+    /*
+     * Slower than the single-document fallbacks above, because this one re-reads
+     * the whole roster rather than one claim. At three hundred attendees a
+     * 1,400ms tick was about 214 document reads a second, per staff tab, for as
+     * long as the watch stream stayed down — and the thing it is polling for is
+     * a roster that changes a few times a minute once the doors are open.
+     *
+     * Four seconds is still well inside "staff notice a check-in promptly", and
+     * this is a degraded mode that POLLS_BEFORE_RETRYING_WATCH is actively
+     * trying to climb out of.
+     */
+    pollIntervalMs: 4000,
+    readOnce: async () => toClaimList(await getDocs(claimsQuery)),
+    watch: (next, fail) => onSnapshot(claimsQuery, (snapshot) => next(toClaimList(snapshot)), fail),
+  });
 };
 
 export const createLiveEvent = async ({
   claimAccessSecret,
+  demo = null,
+  eventEndAtMs,
   eventId,
+  eventStartAtMs,
+  isDemo = false,
+  memberEarlyAccessAtMs,
   state,
   timeframeEnd,
   timeframeLabel,
@@ -482,76 +715,161 @@ export const createLiveEvent = async ({
     throw new Error("Firebase is not configured.");
   }
 
-  await setDoc(liveStateRef, {
+  const batch = writeBatch(db);
+
+  batch.set(liveStateRef, {
     active: true,
     claimCount: 0,
-    claimAccessSecret,
+    eventEndAtMs: eventEndAtMs ?? null,
     eventId,
+    eventStartAtMs: eventStartAtMs ?? null,
+    memberEarlyAccessAtMs: memberEarlyAccessAtMs ?? null,
     nextClaimNumber: 1,
+    /* Staff are numbered before #1, off their own counter — see
+       src/staffNumbers.js. Held positive here and stored on the claim as its
+       negative, so both counters read the same way. */
+    nextStaffNumber: 1,
     state,
     startedAt: serverTimestamp(),
+    stateVersion: 1,
     timeframeEnd,
     timeframeLabel,
     timeframeStart,
     updatedAt: serverTimestamp(),
+    // Only written when the event is a demo, so a real event's document stays
+    // exactly the shape it has always been.
+    ...(isDemo ? { demo, isDemo: true } : {}),
+  });
+  batch.set(claimAccessRef, {
+    secret: claimAccessSecret,
+    updatedAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+};
+
+const readStateVersion = (liveEventData) => {
+  const version = Number(liveEventData?.stateVersion);
+  return Number.isFinite(version) ? Math.trunc(version) : 0;
+};
+
+/**
+ * Applies the staff-editable event details without disturbing the round in
+ * progress.
+ *
+ * This used to read the document and write back a whole `state` object built
+ * when the dialog was opened, so saving while auto-advance was running rolled
+ * `current`, `last`, `round` and `finalCall` back to their old values. Now the
+ * current state is read inside the transaction and only the form's own fields
+ * are merged over it.
+ */
+export const updateLiveEventDetails = async ({
+  eventEndAtMs,
+  eventStartAtMs,
+  memberEarlyAccessAtMs,
+  stateChanges,
+  timeframeEnd,
+  timeframeLabel,
+  timeframeStart,
+}) => {
+  if (!firebaseEnabled) {
+    throw new Error("Firebase is not configured.");
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(liveStateRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("No event is currently live.");
+    }
+
+    const liveEventData = snapshot.data() || {};
+
+    transaction.update(liveStateRef, {
+      eventEndAtMs: eventEndAtMs ?? null,
+      eventStartAtMs: eventStartAtMs ?? null,
+      memberEarlyAccessAtMs: memberEarlyAccessAtMs ?? null,
+      state: { ...(liveEventData.state || {}), ...stateChanges },
+      stateVersion: readStateVersion(liveEventData) + 1,
+      timeframeEnd,
+      timeframeLabel,
+      timeframeStart,
+      updatedAt: serverTimestamp(),
+      claimAccessSecret: deleteField(),
+    });
+
+    // Migration for events started before the secret moved out of the public
+    // document: carry it across so an in-flight event keeps accepting check-ins.
+    if (typeof liveEventData.claimAccessSecret === "string" && liveEventData.claimAccessSecret) {
+      transaction.set(claimAccessRef, {
+        secret: liveEventData.claimAccessSecret,
+        updatedAt: serverTimestamp(),
+      });
+    }
   });
 };
 
-export const updateLiveEventDetails = async ({
-  state,
-  timeframeEnd,
-  timeframeLabel,
-  timeframeStart,
-}) => {
+/**
+ * Writes the call state, merged over whatever is on the server now.
+ *
+ * `baseState` is the state the caller built its change on. Only the fields that
+ * differ from it are written, over the state read inside the transaction — so
+ * two control panels working at once no longer overwrite each other with their
+ * own stale copies of the fields they never touched.
+ *
+ * This used to refuse the write outright when the event had moved on, because
+ * without any guard two panels each computed "current + groupSize" from their
+ * own copy and the later write swallowed the earlier one. Reducing the write to
+ * its own fields solves that without refusing anything: both panels write the
+ * same advanced group, and neither drags the other's settings backwards.
+ *
+ * `requireUnchangedFields` is for the few writes that must not merge — the ones
+ * that only make sense happening once. If another panel has moved one of those
+ * fields since `baseState` was read, this write is dropped and reports back
+ * that it did not apply.
+ */
+export const pushLiveState = async (
+  nextState,
+  { baseState, requireUnchangedFields } = {},
+) => {
   if (!firebaseEnabled) {
     throw new Error("Firebase is not configured.");
   }
 
-  const liveEventSnapshot = await getDoc(liveStateRef);
-  const liveEventData = liveEventSnapshot.exists() ? liveEventSnapshot.data() || {} : {};
-  const sanitizedLiveEventData = {
-    active: liveEventData.active === true,
-    claimCount: Number.isFinite(liveEventData.claimCount)
-      ? Math.max(0, Math.trunc(liveEventData.claimCount))
-      : 0,
-    claimAccessSecret:
-      typeof liveEventData.claimAccessSecret === "string" ? liveEventData.claimAccessSecret : "",
-    eventId:
-      liveEventData.eventId == null
-        ? null
-        : typeof liveEventData.eventId === "string"
-          ? liveEventData.eventId
-          : String(liveEventData.eventId),
-    nextClaimNumber:
-      Number.isFinite(liveEventData.nextClaimNumber) && liveEventData.nextClaimNumber >= 1
-        ? Math.trunc(liveEventData.nextClaimNumber)
-        : 1,
-    state,
-    timeframeEnd,
-    timeframeLabel,
-    timeframeStart,
-    updatedAt: serverTimestamp(),
-  };
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(liveStateRef);
 
-  if (liveEventData.startedAt != null) {
-    sanitizedLiveEventData.startedAt = liveEventData.startedAt;
-  }
+    if (!snapshot.exists()) {
+      throw new Error("No event is currently live.");
+    }
 
-  if (liveEventData.endedAt != null) {
-    sanitizedLiveEventData.endedAt = liveEventData.endedAt;
-  }
+    const liveEventData = snapshot.data() || {};
+    const currentState = normalizeState(liveEventData.state);
 
-  await setDoc(liveStateRef, sanitizedLiveEventData);
-};
+    if (!hasUnchangedStateFields(baseState, currentState, requireUnchangedFields)) {
+      return { applied: false, state: currentState };
+    }
 
-export const pushLiveState = async (state) => {
-  if (!firebaseEnabled) {
-    throw new Error("Firebase is not configured.");
-  }
+    const mergedState = applyStateChanges(
+      currentState,
+      getStateChanges(baseState, nextState),
+    );
 
-  await updateDoc(liveStateRef, {
-    state,
-    updatedAt: serverTimestamp(),
+    transaction.update(liveStateRef, {
+      state: mergedState,
+      /* Still counted up, even though nothing reads it to refuse a write any
+         more: it is the cheapest way to tell from the document whether two
+         panels are writing at all, and the rules already allow the field. */
+      stateVersion: readStateVersion(liveEventData) + 1,
+      updatedAt: serverTimestamp(),
+      // Events started before the secret moved under /private still carry the old
+      // field, and the rules reject any document that includes it. Clearing it here
+      // means the first group advance repairs an in-flight event instead of
+      // freezing it. Harmless once no such documents remain.
+      claimAccessSecret: deleteField(),
+    });
+
+    return { applied: true, state: mergedState };
   });
 };
 
@@ -560,335 +878,282 @@ export const closeLiveEvent = async ({ state }) => {
     throw new Error("Firebase is not configured.");
   }
 
-  await setDoc(liveStateRef, {
+  const batch = writeBatch(db);
+
+  batch.set(liveStateRef, {
     active: false,
     claimCount: 0,
-    claimAccessSecret: "",
     endedAt: serverTimestamp(),
+    eventEndAtMs: null,
     eventId: null,
+    eventStartAtMs: null,
+    memberEarlyAccessAtMs: null,
     nextClaimNumber: 1,
+    nextStaffNumber: 1,
     state,
+    stateVersion: 0,
     timeframeEnd: "",
     timeframeLabel: "",
     timeframeStart: "",
     updatedAt: serverTimestamp(),
   });
-};
-
-export const claimEventNumber = async ({
-  claimKey,
-  avatarUrl,
-  discordUserId,
-  displayName,
-  email,
-  eventId,
-  isMember,
-  participantType,
-}) => {
-  if (!firebaseEnabled) {
-    throw new Error("Firebase is not configured.");
-  }
-
-  const claimId = buildClaimId(eventId, claimKey);
-  const claimRef = getClaimRef(claimId);
-
-  return runTransaction(db, async (transaction) => {
-    const liveEventSnapshot = await transaction.get(liveStateRef);
-
-    if (!liveEventSnapshot.exists()) {
-      throw new Error("The event is not open yet.");
-    }
-
-    const liveEvent = liveEventSnapshot.data();
-
-    if (!liveEvent.active || liveEvent.eventId !== eventId) {
-      throw new Error("This event is no longer accepting claims.");
-    }
-
-    const existingClaimSnapshot = await transaction.get(claimRef);
-
-    if (existingClaimSnapshot.exists()) {
-      const existingClaim = existingClaimSnapshot.data();
-      const qrToken = existingClaim.qrToken ?? createClaimQrToken();
-      const claimUpdates = {
-        updatedAt: serverTimestamp(),
-      };
-      let shouldUpdate = false;
-
-      if (!existingClaim.qrToken) {
-        claimUpdates.qrToken = qrToken;
-        shouldUpdate = true;
-      }
-
-      if (avatarUrl && existingClaim.avatarUrl !== avatarUrl) {
-        claimUpdates.avatarUrl = avatarUrl;
-        shouldUpdate = true;
-      }
-
-      if (displayName && existingClaim.displayName !== displayName) {
-        claimUpdates.displayName = displayName;
-        shouldUpdate = true;
-      }
-
-      if (!existingClaim.joinedAt) {
-        claimUpdates.joinedAt = existingClaim.claimedAt ?? serverTimestamp();
-        shouldUpdate = true;
-      }
-
-      if (shouldUpdate) {
-        transaction.update(claimRef, claimUpdates);
-      }
-
-      return {
-        claimId,
-        existing: true,
-        isMember: existingClaim.isMember ?? false,
-        itemsClaimedCount: existingClaim.itemsClaimedCount ?? 0,
-        number: existingClaim.number,
-        qrToken,
-        redeemedRound: existingClaim.redeemedRound ?? 0,
-      };
-    }
-
-    const number = liveEvent.nextClaimNumber ?? 1;
-    const qrToken = createClaimQrToken();
-
-    transaction.set(claimRef, {
-      avatarUrl: avatarUrl ?? "",
-      claimedAt: serverTimestamp(),
-      joinedAt: serverTimestamp(),
-      discordUserId: discordUserId ?? null,
-      displayName,
-      email: email ?? null,
-      eventId,
-      isMember: isMember ?? false,
-      itemClaimedAtMsHistory: [],
-      itemsClaimedCount: 0,
-      number,
-      participantType,
-      qrToken,
-      redeemedRound: 0,
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.update(liveStateRef, {
-      claimCount: number,
-      nextClaimNumber: number + 1,
-      updatedAt: serverTimestamp(),
-    });
-
-    return {
-      claimId,
-      existing: false,
-      isMember: isMember ?? false,
-      itemsClaimedCount: 0,
-      number,
-      qrToken,
-      redeemedRound: 0,
-    };
-  });
-};
-
-export const enqueuePreclaim = async ({
-  claimKey,
-  avatarUrl,
-  discordUserId,
-  displayName,
-  eventId,
-  isMember,
-  participantType,
-  memberEligibleAt,
-}) => {
-  if (!firebaseEnabled) {
-    throw new Error("Firebase is not configured.");
-  }
-
-  const claimId = buildClaimId(eventId, claimKey);
-  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
-  try {
-     
-    console.debug("enqueuePreclaim: writing preclaim", { claimId, eventId, claimKey });
-
-    // Log current auth user id and custom claims (if available) to help debug rules
-    try {
-      if (auth && auth.currentUser) {
-         
-        console.debug("enqueuePreclaim: auth.currentUser.uid", auth.currentUser.uid);
-        try {
-          const idTokenResult = await auth.currentUser.getIdTokenResult();
-           
-          console.debug("enqueuePreclaim: idTokenResult.claims", idTokenResult.claims);
-        } catch (tokenErr) {
-           
-          console.debug("enqueuePreclaim: failed to getIdTokenResult", tokenErr && (tokenErr.message || tokenErr));
-        }
-      } else {
-         
-        console.debug("enqueuePreclaim: no auth.currentUser available");
-      }
-    } catch {
-      // swallow logging errors
-    }
-
-      // Prefer the authenticated user's UID for discordUserId when available
-      const finalDiscordUserId = (auth && auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : (discordUserId ?? null);
-
-      const docPayload = {
-        avatarUrl: avatarUrl ?? "",
-        createdAt: serverTimestamp(),
-        discordUserId: finalDiscordUserId,
-        // Ensure displayName is non-empty so security rules allow the write.
-        displayName: (displayName && displayName.length > 0) ? displayName : (finalDiscordUserId ? String(finalDiscordUserId) : "Guest"),
-        eventId,
-        memberEligibleAt: memberEligibleAt ?? null,
-        isMember: isMember ?? false,
-        // Ensure participantType is present for rule validation.
-        participantType: participantType ?? "discord",
-        updatedAt: serverTimestamp(),
-      };
-
-       
-      console.debug("enqueuePreclaim: final payload", docPayload);
-
-      await setDoc(preclaimRef, docPayload, { merge: true });
-
-     
-    console.debug("enqueuePreclaim: write successful", { claimId });
-
-    return { claimId };
-  } catch (e) {
-     
-    console.error("enqueuePreclaim failed (client):", e && (e.code || e.message || e), e);
-    throw e;
-  }
-};
-
-export const updatePreclaimMembership = async ({
-  claimKey,
-  eventId,
-  isMember,
-  memberEligibleAt,
-  displayName,
-  avatarUrl,
-}) => {
-  if (!firebaseEnabled) {
-    throw new Error("Firebase is not configured.");
-  }
-
-  const claimId = buildClaimId(eventId, claimKey);
-  const preclaimRef = doc(db, "events", "live-number-caller", "preclaims", claimId);
-
-  // Use auth.currentUser.uid when available to keep owner identity consistent
-  const finalDiscordUserId = (auth && auth.currentUser && auth.currentUser.uid) ? auth.currentUser.uid : null;
-
-  const updatePayload = {
-    isMember: isMember ?? false,
-    memberEligibleAt: memberEligibleAt ?? null,
-    // Ensure displayName is non-empty so security rules allow the update.
-    displayName: (displayName && displayName.length > 0) ? displayName : (finalDiscordUserId ? String(finalDiscordUserId) : "Guest"),
-    avatarUrl: avatarUrl ?? "",
-    discordUserId: finalDiscordUserId,
-    createdAt: serverTimestamp(),
+  batch.set(claimAccessRef, {
+    secret: "",
     updatedAt: serverTimestamp(),
-    eventId,
-  };
+  });
 
-  // Ensure participantType is present (rules require it)
-  try {
-    const existing = await getDoc(preclaimRef);
-    const existingParticipantType = existing.exists() ? existing.data()?.participantType : null;
+  await batch.commit();
+};
 
-    updatePayload.participantType = existingParticipantType || "discord";
-  } catch {
-    updatePayload.participantType = "discord";
+/**
+ * Requests a number for the signed-in attendee.
+ *
+ * The number itself, the attendee's identity and their member status are all
+ * decided by the server from the verified auth token; the only thing the client
+ * gets a say in is the display name and avatar. `claimAccessCode` is the code
+ * scanned from the display QR, and the callable rejects the request without a
+ * currently-valid one.
+ */
+export const claimNumberAsAttendee = async ({
+  avatarUrl,
+  claimAccessCode,
+  displayName,
+  eventId,
+}) => {
+  if (!firebaseEnabled || !claimNumberAsAttendeeCallable) {
+    throw new Error("Firebase functions not configured.");
   }
 
-   
-  console.debug("updatePreclaimMembership: updating preclaim", { claimId, updatePayload, finalDiscordUserId });
+  const result = await claimNumberAsAttendeeCallable({
+    avatarUrl,
+    claimAccessCode,
+    displayName,
+    eventId,
+  });
 
-  await setDoc(preclaimRef, updatePayload, { merge: true });
+  return result.data;
+};
 
-  return { claimId };
+/**
+ * Adds the signed-in attendee to the pre-event queue. Same access check as
+ * claiming a number; membership and early-access eligibility are resolved
+ * server-side rather than taken from the request.
+ */
+export const joinQueueAsAttendee = async ({
+  avatarUrl,
+  claimAccessCode,
+  displayName,
+  eventId,
+}) => {
+  if (!firebaseEnabled || !joinQueueAsAttendeeCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await joinQueueAsAttendeeCallable({
+    avatarUrl,
+    claimAccessCode,
+    displayName,
+    eventId,
+  });
+
+  return result.data;
+};
+
+/**
+ * Refreshes the caller's ID token once, and remembers that it did.
+ *
+ * A freshly promoted staff account is carrying a token minted before the staff
+ * claim existed, so the first scan of an event needs a forced refresh or the
+ * callable refuses it. That happens at most once per staff member per session —
+ * but redeemClaimByQr used to force it on *every* scan, which put a network
+ * round trip to Firebase Auth in front of every person waiting at the pickup
+ * table, all evening.
+ *
+ * Keyed on the uid so signing in as somebody else refreshes again.
+ */
+let refreshedTokenForUid = "";
+
+const ensureFreshStaffToken = async () => {
+  const currentUser = auth?.currentUser;
+
+  if (!currentUser || refreshedTokenForUid === currentUser.uid) {
+    return;
+  }
+
+  try {
+    await currentUser.getIdToken(true);
+    refreshedTokenForUid = currentUser.uid;
+  } catch {
+    // Continue; the callable will surface a clear auth error if it is invalid.
+  }
 };
 
 export const redeemClaimByQr = async ({ claimId, eventId, qrToken }) => {
+  if (!firebaseEnabled || !redeemClaimByQrAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  await ensureFreshStaffToken();
+
+  try {
+    const result = await redeemClaimByQrAsStaffCallable({ claimId, eventId, qrToken });
+
+    return result.data;
+  } catch (error) {
+    /* The one case the per-scan refresh was really covering: a token that no
+       longer says what the callable needs. Force one and try again, so a
+       promotion mid-event still lands without costing every other scan a round
+       trip. */
+    if (error?.code === "functions/permission-denied" && auth?.currentUser) {
+      refreshedTokenForUid = "";
+      await ensureFreshStaffToken();
+
+      const result = await redeemClaimByQrAsStaffCallable({ claimId, eventId, qrToken });
+
+      return result.data;
+    }
+
+    throw error;
+  }
+};
+
+/** Puts the signed-in attendee into the raffle, when staff require opting in. */
+export const joinRaffleAsAttendee = async ({ eventId }) => {
+  if (!firebaseEnabled || !joinRaffleAsAttendeeCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await joinRaffleAsAttendeeCallable({ eventId });
+
+  return result.data;
+};
+
+/**
+ * Confirms a raffle prize for the attendee whose code was scanned.
+ *
+ * Records nothing. The callable checks that the code belongs to a winner of
+ * this event and says who they are; the prize handover itself is not written
+ * anywhere, so no raffle can move the item-claim counts or the graphs.
+ */
+export const redeemRaffleByQr = async ({ claimId, eventId, qrToken }) => {
+  if (!firebaseEnabled || !redeemRaffleByQrAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await redeemRaffleByQrAsStaffCallable({ claimId, eventId, qrToken });
+
+  return result.data;
+};
+
+/** Newest post on the club announcements page — usually the event's book list. */
+export const readLatestAnnouncement = async () => {
+  if (!firebaseEnabled || !fetchLatestAnnouncementCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await fetchLatestAnnouncementCallable({});
+
+  return result.data;
+};
+
+/** Past events with their headline metrics, newest first. */
+export const readArchivedEvents = async () => {
+  if (!firebaseEnabled || !listArchivedEventsCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await listArchivedEventsCallable({});
+
+  return result.data?.events ?? [];
+};
+
+/** Full attendee list for one past event. */
+export const readArchivedEvent = async ({ eventId }) => {
+  if (!firebaseEnabled || !readArchivedEventCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await readArchivedEventCallable({ eventId });
+
+  return result.data;
+};
+
+/**
+ * Pauses or resumes a demo, for everyone.
+ *
+ * Held on the event rather than in the control panel that pressed the button:
+ * a second staff tab is a second demo driver, and a pause only that tab knew
+ * about left the other one still joining people and taking items — which looks
+ * exactly like the button not working.
+ */
+export const setDemoPausedAsStaff = async ({ paused }) => {
   if (!firebaseEnabled) {
     throw new Error("Firebase is not configured.");
   }
 
-  if (redeemClaimByQrAsStaffCallable) {
-    if (auth?.currentUser) {
-      try {
-        await auth.currentUser.getIdToken(true);
-      } catch {
-        // Continue; callable will surface a clear auth error if token is invalid.
-      }
-    }
+  await updateDoc(liveStateRef, {
+    isDemoPaused: paused === true,
+    updatedAt: serverTimestamp(),
+  });
+};
 
-    const result = await redeemClaimByQrAsStaffCallable({ claimId, eventId, qrToken });
-    return result.data;
+/** Creates a batch of fake attendees on a demo event. Idempotent per index. */
+export const seedDemoParticipantsAsStaff = async ({ eventId, participants }) => {
+  if (!firebaseEnabled || !seedDemoParticipantsAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
   }
 
-  const claimRef = getClaimRef(claimId);
+  const result = await seedDemoParticipantsAsStaffCallable({ eventId, participants });
 
-  return runTransaction(db, async (transaction) => {
-    const [liveEventSnapshot, claimSnapshot] = await Promise.all([
-      transaction.get(liveStateRef),
-      transaction.get(claimRef),
-    ]);
+  return result.data;
+};
 
-    if (!liveEventSnapshot.exists()) {
-      throw new Error("The event is not open yet.");
-    }
+/** Gives every queued demo participant a number, as the doors opening would. */
+export const assignQueuedDemoParticipantsAsStaff = async ({ eventId }) => {
+  if (!firebaseEnabled || !assignQueuedDemoParticipantsAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
 
-    if (!claimSnapshot.exists()) {
-      throw new Error("This claim could not be found.");
-    }
+  const result = await assignQueuedDemoParticipantsAsStaffCallable({ eventId });
 
-    const liveEvent = liveEventSnapshot.data();
-    const claim = claimSnapshot.data();
-    const currentRound = liveEvent.state?.round ?? 1;
-    const currentNumber = liveEvent.state?.current ?? 0;
+  return result.data;
+};
 
-    if (!liveEvent.active || liveEvent.eventId !== eventId) {
-      throw new Error("This QR code is for a different event.");
-    }
+/** Marks one fake attendee as having picked up an item this round. */
+export const redeemDemoClaimAsStaff = async ({ claimId, eventId }) => {
+  if (!firebaseEnabled || !redeemDemoClaimAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
 
-    if (claim.eventId !== eventId || claim.qrToken !== qrToken) {
-      throw new Error("This QR code is no longer valid.");
-    }
+  const result = await redeemDemoClaimAsStaffCallable({ claimId, eventId });
 
-    if (currentNumber < claim.number) {
-      throw new Error("This number is not eligible yet.");
-    }
+  return result.data;
+};
 
-    if ((claim.redeemedRound ?? 0) === currentRound) {
-      return {
-        alreadyRedeemed: true,
-        displayName: claim.displayName,
-        number: claim.number,
-        round: currentRound,
-      };
-    }
+/**
+ * Puts one fake attendee into the raffle.
+ *
+ * The attendee path works off the caller's own session, which a demo
+ * participant does not have — so the driver stands in for their phone here the
+ * same way it does for a pickup.
+ */
+export const joinRaffleAsDemoParticipantAsStaff = async ({ claimId, eventId }) => {
+  if (!firebaseEnabled || !joinRaffleAsDemoParticipantAsStaffCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
 
-    const nextItemClaimedAtMsHistory = [
-      ...(Array.isArray(claim.itemClaimedAtMsHistory) ? claim.itemClaimedAtMsHistory : []),
-      Date.now(),
-    ];
+  const result = await joinRaffleAsDemoParticipantAsStaffCallable({ claimId, eventId });
 
-    transaction.update(claimRef, {
-      itemClaimedAtMsHistory: nextItemClaimedAtMsHistory,
-      itemsClaimedCount: (claim.itemsClaimedCount ?? 0) + 1,
-      redeemedAt: serverTimestamp(),
-      redeemedRound: currentRound,
-      updatedAt: serverTimestamp(),
-    });
+  return result.data;
+};
 
-    return {
-      alreadyRedeemed: false,
-      displayName: claim.displayName,
-      number: claim.number,
-      round: currentRound,
-    };
-  });
+/** Permanently deletes one past event and its archived attendees. */
+export const deleteArchivedEvent = async ({ eventId }) => {
+  if (!firebaseEnabled || !deleteArchivedEventCallable) {
+    throw new Error("Firebase functions not configured.");
+  }
+
+  const result = await deleteArchivedEventCallable({ eventId });
+
+  return result.data;
 };

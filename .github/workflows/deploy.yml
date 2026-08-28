@@ -7,11 +7,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: firebase-production
+  group: firebase-deploy
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Gate everything on the checks. Firestore rules are the only thing standing
+  # between a signed-in Discord user and the event's data, and a bad edit is
+  # invisible until someone cannot claim a number.
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,35 +29,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Validate required secrets
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-        run: |
-          missing=0
-          for name in \
-            FIREBASE_SERVICE_ACCOUNT \
-            VITE_FIREBASE_API_KEY \
-            VITE_FIREBASE_AUTH_DOMAIN \
-            VITE_FIREBASE_PROJECT_ID \
-            VITE_FIREBASE_STORAGE_BUCKET \
-            VITE_FIREBASE_MESSAGING_SENDER_ID \
-            VITE_FIREBASE_APP_ID
-          do
-            if [ -z "${!name}" ]; then
-              echo "Missing required secret: $name"
-              missing=1
-            fi
-          done
-
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
+      - name: Set up Java (required by the Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
       - name: Install dependencies
         run: npm ci
@@ -65,6 +44,184 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm run test:unit
+
+      # Catches module-scope failures that compile fine and then render a blank
+      # page — `vite build` succeeding is not evidence the app can start.
+      - name: Smoke test (app boots)
+        run: npm run test:smoke
+
+      - name: Firestore rules tests
+        run: npx firebase-tools emulators:exec --only firestore --project demo-number-caller "node --test tests/firestore.rules.test.mjs"
+
+  # Runs only once STAGING_FIREBASE_PROJECT_ID is set as a repository variable,
+  # so the pipeline keeps working before the staging project exists.
+  deploy-staging:
+    needs: test
+    if: ${{ vars.STAGING_FIREBASE_PROJECT_ID != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment: staging
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate staging secrets
+        env:
+          SECRETS: |
+            STAGING_FIREBASE_SERVICE_ACCOUNT=${{ secrets.STAGING_FIREBASE_SERVICE_ACCOUNT }}
+            STAGING_VITE_FIREBASE_API_KEY=${{ secrets.STAGING_VITE_FIREBASE_API_KEY }}
+            STAGING_VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.STAGING_VITE_FIREBASE_AUTH_DOMAIN }}
+            STAGING_VITE_FIREBASE_APP_ID=${{ secrets.STAGING_VITE_FIREBASE_APP_ID }}
+        run: |
+          missing=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            name="${line%%=*}"
+            value="${line#*=}"
+            if [ -z "$value" ]; then
+              echo "Missing required secret: $name"
+              missing=1
+            fi
+          done <<< "$SECRETS"
+          [ "$missing" -eq 0 ]
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.STAGING_VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.STAGING_VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.STAGING_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.STAGING_VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.STAGING_VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.STAGING_VITE_FIREBASE_APP_ID }}
+          VITE_DISCORD_CLIENT_ID: ${{ secrets.STAGING_VITE_DISCORD_CLIENT_ID }}
+          # Staging exists to rehearse what production will do, and App Check is
+          # the one setting that takes an event down if it is wrong. Without the
+          # site key here, staging never sends attestation tokens — so the step
+          # before flipping ENFORCE_APP_CHECK could not be rehearsed on the one
+          # environment built for rehearsing it.
+          VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.STAGING_VITE_FIREBASE_APPCHECK_SITE_KEY }}
+          VITE_ERROR_REPORT_URL: ${{ secrets.STAGING_VITE_ERROR_REPORT_URL }}
+        run: npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.STAGING_FIREBASE_SERVICE_ACCOUNT }}
+
+      # Same reasoning as the production job below: without this file the
+      # deployed functions run on their code defaults.
+      - name: Write Functions runtime config
+        env:
+          ATTENDEE_MIN_INSTANCES: ${{ vars.STAGING_ATTENDEE_MIN_INSTANCES }}
+          DISCORD_CLIENT_ID: ${{ secrets.STAGING_VITE_DISCORD_CLIENT_ID }}
+          DISCORD_STAFF_USER_IDS: ${{ secrets.STAGING_DISCORD_STAFF_USER_IDS }}
+          ENFORCE_APP_CHECK: ${{ vars.STAGING_ENFORCE_APP_CHECK }}
+          ERROR_REPORT_ALLOWED_ORIGINS: ${{ vars.STAGING_ERROR_REPORT_ALLOWED_ORIGINS }}
+        run: |
+          {
+            echo "ENFORCE_APP_CHECK=${ENFORCE_APP_CHECK:-false}"
+            echo "ERROR_REPORT_ALLOWED_ORIGINS=${ERROR_REPORT_ALLOWED_ORIGINS}"
+            echo "DISCORD_STAFF_USER_IDS=${DISCORD_STAFF_USER_IDS}"
+            echo "DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}"
+            echo "ATTENDEE_MIN_INSTANCES=${ATTENDEE_MIN_INSTANCES:-0}"
+          } > functions/.env
+          echo "Wrote functions/.env with: $(cut -d= -f1 functions/.env | tr '\n' ' ')"
+
+      - name: Deploy to staging
+        run: npx firebase-tools deploy --project "${{ vars.STAGING_FIREBASE_PROJECT_ID }}" --non-interactive
+
+  deploy-production:
+    # Never reached unless the checks pass, and staging (when configured) went out first.
+    needs: [test, deploy-staging]
+    if: ${{ always() && needs.test.result == 'success' && needs.deploy-staging.result != 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Configure this environment in repo Settings -> Environments to require a
+    # manual review before anything reaches the live event.
+    environment: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate required secrets
+        env:
+          SECRETS: |
+            FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+            VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+            VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+            VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          missing=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            name="${line%%=*}"
+            value="${line#*=}"
+            if [ -z "$value" ]; then
+              echo "Missing required secret: $name"
+              missing=1
+            fi
+          done <<< "$SECRETS"
+          [ "$missing" -eq 0 ]
+
+      # Deliberately a warning and not a failure.
+      #
+      # App Check is the layer that stops somebody scripting the attendee
+      # callables with nothing but the public web config, and the staged
+      # rollout the code is built around only helps if step one — the client
+      # actually sending attestation tokens — has happened. But failing the
+      # deploy over it would mean a missing repo secret blocks a hotfix on the
+      # evening of an event, which is a worse outcome than shipping without
+      # attestation for one more release. So it is made loud instead of fatal.
+      - name: Check App Check configuration
+        env:
+          APPCHECK_SITE_KEY: ${{ secrets.VITE_FIREBASE_APPCHECK_SITE_KEY }}
+          ENFORCE_APP_CHECK: ${{ vars.ENFORCE_APP_CHECK }}
+        run: |
+          if [ -z "$APPCHECK_SITE_KEY" ]; then
+            echo "::warning title=App Check is not configured::VITE_FIREBASE_APPCHECK_SITE_KEY is unset, so this build sends no attestation tokens and the attendee callables are reachable by anything holding the public Firebase config. The rotating display code is the only gate. Set the secret, deploy, confirm verified requests in the Firebase console, then set the ENFORCE_APP_CHECK repo variable to true."
+          elif [ "$ENFORCE_APP_CHECK" != "true" ]; then
+            echo "::notice title=App Check is sending but not enforced::Tokens are being sent. Once the Firebase console shows verified requests from real traffic, set the ENFORCE_APP_CHECK repo variable to true."
+          else
+            echo "App Check is configured and enforced."
+          fi
+          if [ "$ENFORCE_APP_CHECK" = "true" ] && [ -z "$APPCHECK_SITE_KEY" ]; then
+            echo "::error title=App Check enforcement would take the event down::ENFORCE_APP_CHECK is true but no site key is set, so every callable would reject every request. Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+
       - name: Build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -73,6 +230,9 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_APPCHECK_SITE_KEY: ${{ secrets.VITE_FIREBASE_APPCHECK_SITE_KEY }}
+          VITE_ERROR_REPORT_URL: ${{ secrets.VITE_ERROR_REPORT_URL }}
+          VITE_DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID }}
         run: npm run build
 
       - name: Authenticate to Google Cloud
@@ -80,12 +240,35 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      - name: Deploy to Firebase
+      # functions/.env is gitignored, so a fresh CI checkout never had one and
+      # every optional Functions setting silently fell back to its code default.
+      # That is why App Check enforcement stayed off in production and the
+      # crash-report endpoint accepted requests from any origin. Writing the file
+      # here is what makes those settings reachable from repo configuration.
+      - name: Write Functions runtime config
         env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          ATTENDEE_MIN_INSTANCES: ${{ vars.ATTENDEE_MIN_INSTANCES }}
+          DISCORD_CLIENT_ID: ${{ secrets.VITE_DISCORD_CLIENT_ID }}
+          DISCORD_STAFF_USER_IDS: ${{ secrets.DISCORD_STAFF_USER_IDS }}
+          ENFORCE_APP_CHECK: ${{ vars.ENFORCE_APP_CHECK }}
+          ERROR_REPORT_ALLOWED_ORIGINS: ${{ vars.ERROR_REPORT_ALLOWED_ORIGINS }}
+        run: |
+          {
+            echo "ENFORCE_APP_CHECK=${ENFORCE_APP_CHECK:-false}"
+            echo "ERROR_REPORT_ALLOWED_ORIGINS=${ERROR_REPORT_ALLOWED_ORIGINS}"
+            echo "DISCORD_STAFF_USER_IDS=${DISCORD_STAFF_USER_IDS}"
+            # The OAuth application the browser authorizes against and the one
+            # the token exchange presents have to be the same app, and until now
+            # only the browser's half was configurable: the server fell back to
+            # the hardcoded default. Pointing VITE_DISCORD_CLIENT_ID at a
+            # different application would have failed every login at once, with
+            # nothing but a generic "Discord login failed" to go on. Written from
+            # the same secret so the pair can only move together.
+            echo "DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}"
+            # Warm instances for the attendee callables. 0 outside an event.
+            echo "ATTENDEE_MIN_INSTANCES=${ATTENDEE_MIN_INSTANCES:-0}"
+          } > functions/.env
+          echo "Wrote functions/.env with: $(cut -d= -f1 functions/.env | tr '\n' ' ')"
+
+      - name: Deploy to production
         run: npx firebase-tools deploy --project boiler-book-club-number-caller --non-interactive

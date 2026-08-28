@@ -13,8 +13,48 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.staff == true;
     }
 
-    function isOwnClaim(data) {
-      return isSignedIn() && data.discordUserId == request.auth.uid;
+    // Whether a claim/preclaim id is the caller's own.
+    //
+    // buildClaimId in src/firebase.js and buildAttendeeClaimId in
+    // functions/index.js both build
+    // `${eventId}__${encodeURIComponent("discord:" + uid)}`, and
+    // encodeURIComponent turns the colon into %3A — so the half after the seam
+    // identifies the owner and nothing else does.
+    //
+    // Matched on that half rather than on the whole id, because the event id
+    // that prefixes it is the event *instance* uuid stored in the parent
+    // document's `eventId` field, not the {eventId} path segment (which is
+    // always the literal 'live-number-caller'). Reading the real one would cost
+    // a get() — a billed document read on every claim access — for a value that
+    // adds nothing: an id ending in the caller's own uid is the caller's own
+    // document whichever event prefixes it.
+    //
+    // Neither half can contain the seam: an event id is a uuid, and the
+    // participant key is percent-encoded. So the split is unambiguous, and the
+    // uid is compared as a plain string rather than interpolated into a regex.
+    function isOwnRecordId(recordId) {
+      return isSignedIn()
+        && recordId.split('__').size() == 2
+        && recordId.split('__')[1] == 'discord%3A' + request.auth.uid;
+    }
+
+    // Reading a document that does not exist is allowed: the attendee page polls
+    // for its own claim and preclaim before either exists, and treats a missing
+    // document as "not assigned yet".
+    //
+    // That allowance is why this tests the requested *id* rather than
+    // resource.data.discordUserId. Gating it on being signed in was not enough:
+    // claim ids are derived from the Discord user id and the event id is on the
+    // world-readable event document, so any account could ask for
+    // claims/{eventId}__discord%3A{victim} and read the answer off the outcome —
+    // allowed-and-empty meant "has not checked in", permission-denied meant "has".
+    // Deciding on the id gives the same answer whether or not the document
+    // exists, so there is nothing left to probe.
+    //
+    // It also keeps demo participants (`__demo%3A{n}`) staff-only, which the
+    // discordUserId test did by accident — those documents carry a null owner.
+    function canReadOwnRecord(recordId) {
+      return isStaff() || isOwnRecordId(recordId);
     }
 
     function validLiveState(state) {
@@ -24,44 +64,77 @@ service cloud.firestore {
           'titleFont',
           'claimRulesText',
           'qrUrl',
+          'displayFeedEnabled',
           'autoAdvanceEnabled',
           'autoAdvanceBacklogLimitEnabled',
-          'autoAdvanceBacklogLimit',
-          'autoAdvanceFinalCall',
+          'autoAdvanceBacklogClearedPercent',
           'autoAdvanceFinalCallTimerEnabled',
           'autoAdvanceFinalCallTimerMinutes',
+          'autoAdvanceGroupTimerEnabled',
+          'autoAdvanceGroupTimerMinutes',
           'autoAdvanceNextGroup',
           'autoAdvanceStartRound',
+          'autoAdvanceStartRoundMinutes',
           'autoAdvanceThresholdPercent',
           'groupSize',
           'memberCheckInLeadMinutes',
           'current',
           'groupStartedAt',
+          'roundStartedAt',
           'last',
           'round',
           'finalCall',
-          'finalCallTargetClaimIds'
+          'finalCallTargetNumbers',
+          // The prize raffle. Winners are held as attendee numbers rather than
+          // claim ids because this document is world-readable and a claim id
+          // carries the winner's Discord user id; a number is already on the
+          // projector.
+          'raffleOpen',
+          'raffleAllowStaff',
+          'raffleMembersOnly',
+          'raffleRequireOptIn',
+          'raffleMemberChances',
+          'raffleAllowRepeatWinners',
+          'raffleSpinCount',
+          'raffleSpinStartedAtMs',
+          'raffleWinnerNumber',
+          'raffleWinnerNumbers'
         ])
         && state.title is string
         && state.title.size() > 0
         && state.title.size() <= 120
         && state.titleFont is string
+        // Capped like title above. It is interpolated into a CSS class name by
+        // getEventTitleClassName, and the client-side allowlist in
+        // src/titleFonts.js does not constrain a direct write.
+        && state.titleFont.size() <= 64
         && state.claimRulesText is string
         && state.claimRulesText.size() <= 6000
         && state.qrUrl is string
         && state.qrUrl.size() <= 2048
+        // Optional so an event started before the toggle existed still saves:
+        // the client treats a missing flag as on, which is what those events
+        // have always done.
+        && (!state.keys().hasAny(['displayFeedEnabled'])
+          || state.displayFeedEnabled is bool)
         && state.autoAdvanceEnabled is bool
         && state.autoAdvanceBacklogLimitEnabled is bool
-        && state.autoAdvanceBacklogLimit is int
-        && state.autoAdvanceBacklogLimit >= 0
-        && state.autoAdvanceBacklogLimit <= 500
-        && state.autoAdvanceFinalCall is bool
+        && state.autoAdvanceBacklogClearedPercent is int
+        && state.autoAdvanceBacklogClearedPercent >= 0
+        && state.autoAdvanceBacklogClearedPercent <= 100
         && state.autoAdvanceFinalCallTimerEnabled is bool
         && state.autoAdvanceFinalCallTimerMinutes is int
         && state.autoAdvanceFinalCallTimerMinutes >= 1
         && state.autoAdvanceFinalCallTimerMinutes <= 240
+        && state.autoAdvanceGroupTimerEnabled is bool
+        && state.autoAdvanceGroupTimerMinutes is int
+        && state.autoAdvanceGroupTimerMinutes >= 1
+        && state.autoAdvanceGroupTimerMinutes <= 240
         && state.autoAdvanceNextGroup is bool
         && state.autoAdvanceStartRound is bool
+        && state.autoAdvanceStartRoundMinutes is int
+        && state.autoAdvanceStartRoundMinutes >= 1
+        && state.autoAdvanceStartRoundMinutes <= 240
         && state.autoAdvanceThresholdPercent is int
         && state.autoAdvanceThresholdPercent >= 0
         && state.autoAdvanceThresholdPercent <= 100
@@ -78,32 +151,134 @@ service cloud.firestore {
         && state.round is int
         && state.round >= 0
         && state.finalCall is bool
-        && state.finalCallTargetClaimIds is list;
+        // The only field on this document that grows with attendance, and the
+        // document is world-readable and rewritten on every check-in. Left
+        // uncapped it could be grown past the 1 MB document limit, at which
+        // point every write to the event fails and the event freezes.
+        //
+        // Guarded with hasAny rather than required outright, so an event started
+        // before the list became numbers is not frozen by the rule.
+        && (!state.keys().hasAny(['finalCallTargetNumbers'])
+          || (state.finalCallTargetNumbers is list
+            && state.finalCallTargetNumbers.size() <= 1000))
+        // In the allowlist above since the group timer landed, but never typed.
+        // Guarded with hasAny rather than a null comparison so a document
+        // written before the field existed cannot fail the rule outright.
+        && (!state.keys().hasAny(['groupStartedAt'])
+          || state.groupStartedAt == null
+          || state.groupStartedAt is int)
+        // The round timer's clock, guarded the same way and for the same
+        // reason: every write from the control panel carries this key, so
+        // leaving it out of the allowlist above rejected the lot — the display
+        // never saw a group advance or the raffle going up.
+        && (!state.keys().hasAny(['roundStartedAt'])
+          || state.roundStartedAt == null
+          || state.roundStartedAt is int)
+        // Every raffle field is guarded the same way, so an event started
+        // before the raffle existed is not frozen by a control panel that has
+        // not reloaded yet.
+        && (!state.keys().hasAny(['raffleOpen']) || state.raffleOpen is bool)
+        // Staff are off the wheel unless this is switched on. Off by default,
+        // and absent entirely on an event started before it existed, which the
+        // hasAny guard reads the same way.
+        && (!state.keys().hasAny(['raffleAllowStaff']) || state.raffleAllowStaff is bool)
+        && (!state.keys().hasAny(['raffleMembersOnly']) || state.raffleMembersOnly is bool)
+        && (!state.keys().hasAny(['raffleRequireOptIn']) || state.raffleRequireOptIn is bool)
+        && (!state.keys().hasAny(['raffleMemberChances'])
+          || (state.raffleMemberChances is int
+            && state.raffleMemberChances >= 1
+            && state.raffleMemberChances <= 5))
+        && (!state.keys().hasAny(['raffleAllowRepeatWinners'])
+          || state.raffleAllowRepeatWinners is bool)
+        && (!state.keys().hasAny(['raffleSpinCount'])
+          || (state.raffleSpinCount is int && state.raffleSpinCount >= 0))
+        && (!state.keys().hasAny(['raffleSpinStartedAtMs'])
+          || state.raffleSpinStartedAtMs == null
+          || state.raffleSpinStartedAtMs is int)
+        // Not >= 0: a staff number is negative, and with staff allowed in the
+        // draw one of them can be the winner on the projector.
+        && (!state.keys().hasAny(['raffleWinnerNumber'])
+          || state.raffleWinnerNumber is int)
+        // Capped for the same reason finalCallTargetNumbers is: this document
+        // is rewritten on every check-in, and an unbounded list on it can be
+        // grown until writes start failing and the event freezes.
+        && (!state.keys().hasAny(['raffleWinnerNumbers'])
+          || (state.raffleWinnerNumbers is list
+            && state.raffleWinnerNumbers.size() <= 500));
     }
 
+    // A demo event runs the real thing against fake attendees. The flag is what
+    // stops it from being filed under Past Events when it closes, so it has to
+    // be set when the event is created and is never edited afterwards.
+    function validDemoConfig(demo) {
+      return demo is map
+        && demo.keys().hasOnly([
+          'memberPercent',
+          'participantCount',
+          'pickupChancePercent',
+          'preStartPercent'
+        ])
+        && demo.memberPercent is int
+        && demo.memberPercent >= 0
+        && demo.memberPercent <= 100
+        && demo.participantCount is int
+        && demo.participantCount >= 1
+        // Kept in step by hand with DEMO_LIMITS in src/demoEvent.js. A demo
+        // exists to show what a full house does to the panel and the display,
+        // which the old cap of 120 was not big enough to do.
+        && demo.participantCount <= 300
+        && demo.pickupChancePercent is int
+        && demo.pickupChancePercent >= 0
+        && demo.pickupChancePercent <= 100
+        && demo.preStartPercent is int
+        && demo.preStartPercent >= 0
+        && demo.preStartPercent <= 100;
+    }
+
+    // Note: no 'claimAccessSecret'. The rotating check-in secret lives under
+    // /private, which is not publicly readable.
     function validLiveEventDocument(data) {
       return data.keys().hasOnly([
           'active',
           'claimCount',
-          'claimAccessSecret',
+          'demo',
           'endedAt',
           'eventId',
+          'eventEndAtMs',
+          'eventStartAtMs',
+          'isDemo',
+          'isDemoPaused',
+          'memberEarlyAccessAtMs',
           'nextClaimNumber',
+          'nextStaffNumber',
           'startedAt',
           'state',
+          'stateVersion',
           'timeframeEnd',
           'timeframeLabel',
           'timeframeStart',
           'updatedAt'
         ])
         && data.active is bool
+        && (!data.keys().hasAny(['isDemo']) || data.isDemo is bool)
+        && (!data.keys().hasAny(['isDemoPaused']) || data.isDemoPaused is bool)
+        && (!data.keys().hasAny(['demo']) || validDemoConfig(data.demo))
         && data.claimCount is int
         && data.claimCount >= 0
-        && data.claimAccessSecret is string
-        && data.claimAccessSecret.size() <= 256
         && (data.eventId == null || data.eventId is string)
+        // Absolute instants resolved in the venue's timezone by the staff browser,
+        // because Cloud Functions run in UTC and cannot resolve "19:00" correctly.
+        && (data.eventEndAtMs == null || data.eventEndAtMs is int)
+        && (data.eventStartAtMs == null || data.eventStartAtMs is int)
+        && (data.memberEarlyAccessAtMs == null || data.memberEarlyAccessAtMs is int)
+        && (data.stateVersion == null || data.stateVersion is int)
         && data.nextClaimNumber is int
         && data.nextClaimNumber >= 1
+        // Staff are numbered before #1 off their own counter. Guarded with
+        // hasAny rather than a null comparison so an event started before
+        // staff numbering existed is not frozen by the rule.
+        && (!data.keys().hasAny(['nextStaffNumber'])
+          || (data.nextStaffNumber is int && data.nextStaffNumber >= 1))
         && data.timeframeEnd is string
         && data.timeframeEnd.size() <= 16
         && data.timeframeLabel is string
@@ -113,190 +288,63 @@ service cloud.firestore {
         && validLiveState(data.state);
     }
 
-    function liveStateIncrementAllowed(requestData, resourceData) {
-      return isSignedIn()
-        // Allow a minimal incremental update where the client only modifies
-        // `nextClaimNumber` and `claimCount`. When other fields are included
-        // in the request they must match the existing document values.
-        && requestData.nextClaimNumber == resourceData.nextClaimNumber + 1
-        && requestData.claimCount == resourceData.nextClaimNumber
-        && (
-          !requestData.keys().hasAny(['active']) || requestData.active == resourceData.active
-        )
-        && (
-          !requestData.keys().hasAny(['claimAccessSecret']) || requestData.claimAccessSecret == resourceData.claimAccessSecret
-        )
-        && (
-          !requestData.keys().hasAny(['endedAt']) || requestData.endedAt == resourceData.endedAt
-        )
-        && (
-          !requestData.keys().hasAny(['eventId']) || requestData.eventId == resourceData.eventId
-        )
-        && (
-          !requestData.keys().hasAny(['startedAt']) || requestData.startedAt == resourceData.startedAt
-        )
-        && (
-          !requestData.keys().hasAny(['state']) || requestData.state == resourceData.state
-        )
-        && (
-          !requestData.keys().hasAny(['timeframeEnd']) || requestData.timeframeEnd == resourceData.timeframeEnd
-        )
-        && (
-          !requestData.keys().hasAny(['timeframeLabel']) || requestData.timeframeLabel == resourceData.timeframeLabel
-        )
-        && (
-          !requestData.keys().hasAny(['timeframeStart']) || requestData.timeframeStart == resourceData.timeframeStart
-        );
-    }
-
-    function validClaimDocument(data) {
-      return data.keys().hasOnly([
-          'avatarUrl',
-          'claimedAt',
-          'joinedAt',
-          'discordUserId',
-          'displayName',
-          'email',
-          'eventId',
-          'isMember',
-          'itemClaimedAtMsHistory',
-          'itemsClaimedCount',
-          'number',
-          'participantType',
-          'qrToken',
-          'redeemedAt',
-          'redeemedRound',
-          'updatedAt'
-        ])
-        && data.avatarUrl is string
-        && data.avatarUrl.size() <= 2048
-        && (data.joinedAt == null || data.joinedAt is timestamp || data.joinedAt is int)
-        && (data.discordUserId == null || data.discordUserId is string)
-        && data.displayName is string
-        && data.displayName.size() > 0
-        && data.displayName.size() <= 120
-        && (data.email == null || data.email is string)
-        && data.eventId is string
-        && data.isMember is bool
-        && data.itemClaimedAtMsHistory is list
-        && data.itemsClaimedCount is int
-        && data.itemsClaimedCount >= 0
-        && data.number is int
-        && data.number >= 1
-        && data.participantType is string
-        && data.participantType in ['discord']
-        && data.qrToken is string
-        && data.qrToken.size() >= 8
-        && data.qrToken.size() <= 256
-        && data.redeemedRound is int
-        && data.redeemedRound >= 0;
-    }
-
-    function validPreclaimDocument(data) {
-      return data.keys().hasOnly([
-          'avatarUrl',
-          'createdAt',
-          'discordUserId',
-          'displayName',
-          'eventId',
-          'memberEligibleAt',
-          'isMember',
-          'participantType',
-          'updatedAt'
-        ])
-        && data.avatarUrl is string
-        && data.avatarUrl.size() <= 2048
-        && (data.discordUserId == null || data.discordUserId is string)
-        && data.displayName is string
-        && data.displayName.size() > 0
-        && data.displayName.size() <= 120
-        && data.eventId is string
-      && (data.memberEligibleAt == null || data.memberEligibleAt is int)
-      && data.isMember is bool
-      && data.participantType is string
-      && data.participantType.size() > 0
-      && (data.createdAt is timestamp || data.createdAt is int)
-      && (data.updatedAt is timestamp || data.updatedAt is int);
-    }
-
-    function claimIdentityUnchanged() {
-      return request.resource.data.claimedAt == resource.data.claimedAt
-        && request.resource.data.joinedAt == resource.data.joinedAt
-        && request.resource.data.discordUserId == resource.data.discordUserId
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.eventId == resource.data.eventId
-        && request.resource.data.number == resource.data.number
-        && request.resource.data.participantType == resource.data.participantType;
-    }
-
-    function attendeeClaimStatusUnchanged() {
-      return request.resource.data.itemClaimedAtMsHistory == resource.data.itemClaimedAtMsHistory
-        && request.resource.data.itemsClaimedCount == resource.data.itemsClaimedCount
-        && request.resource.data.redeemedAt == resource.data.redeemedAt
-        && request.resource.data.redeemedRound == resource.data.redeemedRound;
-    }
-
-    function staffClaimStatusChangeAllowed() {
-      return claimIdentityUnchanged()
-        && request.resource.data.avatarUrl == resource.data.avatarUrl
-        && request.resource.data.displayName == resource.data.displayName
-        && request.resource.data.isMember == resource.data.isMember
-        && request.resource.data.qrToken == resource.data.qrToken;
-    }
-
     match /events/{eventId} {
+      // Public read. This document carries the event title, schedule and current
+      // call state, which the projector and the attendee landing page both need
+      // before anyone signs in. Nothing secret is stored here.
       allow get: if isLiveEventDoc(eventId);
       allow list: if false;
       allow create, update: if isLiveEventDoc(eventId)
-        && (
-          (isStaff() && validLiveEventDocument(request.resource.data))
-          || liveStateIncrementAllowed(request.resource.data, resource.data)
-        );
+        && isStaff()
+        && validLiveEventDocument(request.resource.data);
       allow delete: if false;
 
-      match /public/{docId} {
-        allow get: if isLiveEventDoc(eventId) && docId == 'display-feed';
-        allow list, create, update, delete: if false;
+      // The rotating check-in secret. Staff write it when they start an event and
+      // the display reads it to render the QR code; attendees never see it, and
+      // the callables that validate scanned codes read it with admin credentials.
+      match /private/{docId} {
+        allow get: if isLiveEventDoc(eventId) && isStaff() && docId == 'claim-access';
+        allow create, update: if isLiveEventDoc(eventId)
+          && isStaff()
+          && docId == 'claim-access'
+          && request.resource.data.keys().hasOnly(['secret', 'updatedAt'])
+          && request.resource.data.secret is string
+          && request.resource.data.secret.size() <= 256;
+        allow list, delete: if false;
       }
 
+      // The activity feed carries attendee display names and avatars. The screen
+      // that shows it is opened by staff from the control panel, so it does not
+      // need to be readable by the whole internet. One document per item, written
+      // only by the Cloud Functions.
+      match /feed/{feedItemId} {
+        allow get, list: if isLiveEventDoc(eventId) && isStaff();
+        allow create, update, delete: if false;
+      }
+
+      // Claims are created and modified only by the Cloud Functions
+      // (claimNumberAsAttendee, the staff assign/remove callables, and
+      // redeemClaimByQrAsStaff), which use admin credentials and bypass these
+      // rules. Allowing client writes here is what let attendees pick their own
+      // number and edit their own membership flag.
       match /claims/{claimId} {
-        // Allow authenticated users to read claim documents so client
-        // transactions can check existence before creating. Staff still
-        // retain full access.
-        allow get: if isLiveEventDoc(eventId) && (isStaff() || isSignedIn());
+        allow get: if isLiveEventDoc(eventId) && canReadOwnRecord(claimId);
         allow list: if isLiveEventDoc(eventId) && isStaff();
-        allow create: if isLiveEventDoc(eventId)
-          && isOwnClaim(request.resource.data)
-          && request.resource.data.isMember == (request.auth.token.member == true)
-          && validClaimDocument(request.resource.data)
-          && request.resource.data.eventId == get(/databases/$(database)/documents/events/live-number-caller).data.eventId;
-        allow update: if isLiveEventDoc(eventId)
-          && (
-            // Staff scanner updates should be allowed for legacy claim docs
-            // as long as only claim-status fields change.
-            (isStaff() && staffClaimStatusChangeAllowed())
-            || (
-              isOwnClaim(resource.data)
-              && validClaimDocument(request.resource.data)
-              && claimIdentityUnchanged()
-              && attendeeClaimStatusUnchanged()
-            )
-          );
-        allow delete: if false;
+        allow create, update, delete: if false;
       }
 
+      // Queue entries are likewise written only by joinQueueAsAttendee and the
+      // staff callables, so membership and eligibility cannot be self-declared
+      // and nobody can overwrite somebody else's place in line.
       match /preclaims/{preclaimId} {
-        allow get: if isLiveEventDoc(eventId) && (isStaff() || isOwnClaim(resource.data));
-        allow list: if false;
-        allow create: if isLiveEventDoc(eventId)
-          && (isOwnClaim(request.resource.data) || isStaff())
-          && validPreclaimDocument(request.resource.data)
-          && request.resource.data.eventId == get(/databases/$(database)/documents/events/live-number-caller).data.eventId;
-        allow update: if isLiveEventDoc(eventId)
-          && (isOwnClaim(request.resource.data) || isStaff())
-          && validPreclaimDocument(request.resource.data)
-          && request.resource.data.eventId == get(/databases/$(database)/documents/events/live-number-caller).data.eventId;
-        allow delete: if false;
+        allow get: if isLiveEventDoc(eventId) && canReadOwnRecord(preclaimId);
+        // Staff only, exactly as with claims above. The control panel used to
+        // read the whole queue through a staff-gated callable on a five-second
+        // timer, which cost a function invocation and a full-collection read per
+        // staff tab per tick; it holds a listener now. This grants staff nothing
+        // the callable did not already hand them.
+        allow list: if isLiveEventDoc(eventId) && isStaff();
+        allow create, update, delete: if false;
       }
     }
 

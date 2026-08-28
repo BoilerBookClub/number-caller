@@ -2,16 +2,80 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      viewport-fit=cover lets the page paint into the notch and home-indicator
+      regions, which is what makes env(safe-area-inset-*) report anything other
+      than zero. The fixed bottom bar reads those insets; see .bottom-navbar.
+      user-scalable is deliberately left alone so pinch-zoom still works.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Event Pass</title>
-    <link rel="icon" type="image/png" href="/src/assets/bbc_logo.png" />
+    <meta
+      name="description"
+      content="Live event number calling. Scan the QR code on the display to get your number and see when you are up."
+    />
+    <meta name="theme-color" content="#fef9ef" />
+    <!--
+      For installing to the home screen, which is how an attendee keeps their
+      ticket one tap away for the evening rather than hunting for the tab.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      Square, both of them. The source logo is 264x360, and a non-square icon is
+      letterboxed by a browser tab and squashed outright by iOS's home screen —
+      which is the one place this is meant to end up. The square copies are the
+      same artwork padded out to the app's paper colour; see the manifest for
+      the maskable variant Android crops to its launcher shape.
+    -->
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Event Pass" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      The eight event-title faces, loaded without blocking the first paint.
+      Only one of them is ever used at a time and only on the projector and the
+      ticket header, but as a plain stylesheet link all eight sat in front of
+      every attendee's first render — a round trip to a third-party origin, on a
+      venue network three hundred phones are already saturating, before anything
+      appeared on screen.
+
+      media="print" makes the browser fetch it at low priority and apply it to
+      nothing; the swap hands it to the screen once it has arrived. The titles
+      fall back to the stack in .event-title until then, which is a moment of a
+      different face rather than a moment of nothing.
+
+      The swap is done from src/main.jsx rather than by an onload attribute on
+      this tag. An inline event handler is script, and the Content-Security-Policy
+      in firebase.json does not allow inline script — keeping it here would mean
+      either the fonts never applying or widening script-src to 'unsafe-inline'
+      for the whole app. data-font-swap is what main.jsx looks for.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Barrio&family=Bungee+Shade&family=Creepster&family=Fascinate+Inline&family=Freckle+Face&family=Londrina+Shadow&family=Monoton&family=Rubik+Puddles&family=Rye&display=swap"
+      data-font-swap
+      href="https://fonts.googleapis.com/css2?family=Barrio&family=Bungee+Shade&family=Fascinate+Inline&family=Freckle+Face&family=Londrina+Shadow&family=Monoton&family=Rubik+Puddles&family=Rye&display=swap"
+      rel="stylesheet"
+      media="print"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Barrio&family=Bungee+Shade&family=Fascinate+Inline&family=Freckle+Face&family=Londrina+Shadow&family=Monoton&family=Rubik+Puddles&family=Rye&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <!--
+      Caveat is the app's hand; Patrick Hand is loaded for the one place a
+      misread costs an attendee their turn — the big claimed number, whose
+      digits in Caveat are too close to each other to trust at a glance.
+    -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Caveat&family=Patrick+Hand&display=swap"
       rel="stylesheet"
     />
-    <link href="https://fonts.googleapis.com/css2?family=Caveat&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

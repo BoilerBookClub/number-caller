@@ -4,11 +4,44 @@
       "collectionGroup": "preclaims",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "isMember", "order": "ASCENDING" },
-        { "fieldPath": "memberEligibleAt", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
+        {
+          "fieldPath": "isMember",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "memberEligibleAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "feed",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "eventId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestampMs",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "claims",
+      "fieldPath": "itemClaimedAtMsHistory",
+      "indexes": []
+    }
+  ]
 }
