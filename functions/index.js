@@ -702,6 +702,9 @@ const getMemberEligibleAtForLiveEvent = (liveEvent, nowMs = Date.now()) => {
   return getMemberEligibleAtFromClockTimes(liveEvent, nowMs);
 };
 
+// Discord's JSON error code for "this user is not a member of this guild".
+const DISCORD_UNKNOWN_MEMBER_CODE = 10007;
+
 const fetchDiscordGuildMemberRolesByBot = async ({
   discordUserId,
   retries = 2,
@@ -731,7 +734,29 @@ const fetchDiscordGuildMemberRolesByBot = async ({
     const responseBody = await response.text().catch(() => "");
 
     if (response.status === 404) {
-      return [];
+      /* Only Unknown Member means "not in the guild". Every other 404 — Unknown
+         Guild, above all, which is what Discord answers when the bot itself is
+         not in the server — says nothing about the user, and reading it as an
+         empty role list silently stripped staff from everyone who opened the
+         display in a new tab. Treated as a failed lookup instead, so callers
+         fall back to the claims the user already holds. */
+      let discordErrorCode = null;
+      try {
+        discordErrorCode = JSON.parse(responseBody)?.code ?? null;
+      } catch {
+        // Not JSON; handled as an unexpected 404 below.
+      }
+
+      if (discordErrorCode === DISCORD_UNKNOWN_MEMBER_CODE) {
+        return [];
+      }
+
+      console.error(
+        "Bot guild member lookup returned 404 for a reason other than Unknown Member. " +
+          "Check that the bot behind DISCORD_BOT_TOKEN is in the guild.",
+        { discordErrorCode, guildId: TARGET_GUILD_ID, responseBody: responseBody.slice(0, 200) },
+      );
+      return null;
     }
 
     if (response.ok) {
